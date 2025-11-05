@@ -5,13 +5,17 @@
 
 from time import sleep
 
-from bno08x import *
+from i2c import BNO08X_I2C
 from machine import I2C, Pin
 from utime import ticks_ms, sleep_us
 
 i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=100_000, timeout=200_000)
 
-bno = BNO08X(i2c0, debug=True)
+print("Start")
+print("I2C devices found:", [hex(d) for d in i2c0.scan()])
+print("====================================")
+
+bno = BNO08X_I2C(i2c0, address=0x4B, reset_pin=None, debug=True)
 print("BNO08x I2C connection : Done\n")
 
 bno.enable_feature(BNO_REPORT_GYROSCOPE,20 )
