@@ -1,18 +1,13 @@
-# BNO08X Micropython I2C Function by BradCar
+# BNO08X Micropython I2C Interface by BradCar
 #
 # Adapted from original Adafruit CircuitPython library
 # SPDX-FileCopyrightText: Copyright (c) 2020 Bryan Siepert for Adafruit Industries
 # SPDX-License-Identifier: MIT
+# - Also inspired by dobodu
 #
-
-# SPDX-FileCopyrightText: Copyright (c) 2020 Bryan Siepert for Adafruit Industries
-#
-# SPDX-License-Identifier: MIT
 """
 Subclass of `BNO08X` to use I2C
 """
-
-# from adafruit_bus_device import i2c_device
 
 from struct import pack_into
 
@@ -24,7 +19,7 @@ _BNO08X_DEFAULT_ADDRESS = const(0x4B)
 
 
 class BNO08X_I2C(BNO08X):
-    """Library for the BNO08x IMUs from CEVA & Hillcrest Laboratories
+    """Library for the BNO08x IMUs on I2C
     """
 
     def __init__(self, i2c_bus, address=_BNO08X_DEFAULT_ADDRESS, reset_pin=None, debug=False):
