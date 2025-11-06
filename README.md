@@ -3,7 +3,7 @@
 
 - 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X
 - Copyright (c) 2020 Bryan Siepert for Adafruit Industries
-- Also inspired by dobodu
+- This code also inspired by feature and fixes written by dobodu
 
 ## Library tested
 
@@ -16,17 +16,114 @@ This library has been tested with BNO086 sensor. It should work with BNO080 and 
 ### I2C
 
     #import the library
-    import bno08x
+    from i2c import BNO08X_I2C
+    from bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, BNO_REPORT_ACCELEROMETER
 
     #setup the  I2C bus
-    i2c0 = I2C(0, scl=I2C0_SCL, sda=I2C0_SDA, freq=100000, timeout=200000)
+    i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=100_000, timeout=200_000)
 
     #setup the BNO sensor
-    bno = BNO08x(i2c0)
+    bno = BNO08X_I2C(i2c0, address=0x4b)
 
-Additional paramters
+Optional parameters: 
 
-    bno = BNO08X_I2C(i2c_bus, address=None, rst_pin=14, debug=False)
+    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin==Pin(13), debug=False)
+
+- address : if using 2 BNO08x you need set each up separately (depending on board, add solder jump or cut wire)
+- reset_pin : required to enable sensor hard reset (Pin object not number). If not defined, a soft reset will be used.
+- int_pin : required to time synchronize sensor and host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200 millisecond host-based timestamps are adequate, or if timestamps are not required.
+- debug : print very detailed logs, mainly for debugging driver
+
+## Enable the sensor reports
+
+Before getting sensor results the reports must be enabled:
+
+    bno.enable_feature(BNO_REPORT_ACCELEROMETER)  # for accelerometer
+    
+Primary sensor reports:
+
+        BNO_REPORT_ACCELEROMETER
+        BNO_REPORT_GYROSCOPE
+        BNO_REPORT_MAGNETOMETER
+        BNO_REPORT_LINEAR_ACCELERATION
+        BNO_REPORT_ROTATION_VECTOR
+        BNO_REPORT_GRAVITY
+        BNO_REPORT_GAME_ROTATION_VECTOR
+        BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR
+        BNO_REPORT_STEP_COUNTER
+        BNO_REPORT_SHAKE_DETECTOR
+        BNO_REPORT_STABILITY_CLASSIFIER
+        BNO_REPORT_ACTIVITY_CLASSIFIER
+
+Additional reports:
+
+        BNO_REPORT_RAW_ACCELEROMETER
+        BNO_REPORT_RAW_GYROSCOPE
+        BNO_REPORT_RAW_MAGNETOMETER
+        BNO_REPORT_UNCALIBRATED_GYROSCOPE
+        BNO_REPORT_UNCALIBRATED_MAGNETOMETER
+        BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR
+        BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR
+        BNO_REPORT_GYRO_INTEGRATED_ROTATION_VECTOR
+
+There are additional sensor reports that this driver has not fully implemented. See code and references for details.
+
+## Getting the sensor results:
+
+Sensors values can be accessed with:
+
+    accel_x, accel_y, accel_z = bno.acceleration
+
+Roll, tilt, and yaw can be obtained with:
+
+    roll, tilt, yaw = bno.euler
+
+**Examples of other sensor reports**
+
+See examples directory for sample code. The following functions use on-chip sensor fusion for accuracy.
+
+    x, y, z = bno.acceleration  # acceleration 3-tuple of x,y,z float returned
+    x, y, z = bno.linear_acceleration  # linear accel 3-tuple of x,y,z float returned
+    x, y, z = bno.gyro  # acceleration 3-tuple of x,y,z float returned
+    x, y, z = bno.magnetic  # acceleration 3-tuple of x,y,z float returned
+    roll, pitch, yaw = bno.euler  # rotation 3-tuple of x,y,z float returned
+    x, y, z = bno.gravity  # vector 3-tuple of x,y,z float returned
+    i, j, k, real = bno.quaternion  # rotation 4-tuple of i,j,k,real float returned
+    i, j, k, real = bno.geomagnetic_quaternion  # rotation 4-tuple of i,j,k,real float returned
+    i, j, k, real = bno.game_quaternion  # rotation 4-tuple of i,j,k,real float returned
+    num = bno.steps  # number of steps since initialization returned
+    state = bno.shake  # boolean of state since last read returned
+    stability_str = bno.stability_classification  # string of stability classification returned
+    activity_str = bno.activity_classification  # string of activity classification returned
+
+The following functions can be used to tare, calibrate, and test the sensor:
+
+    bno.tare  # tare the sensor
+
+    bno.begin_calibration  # begin calibration
+    mag_accuracy = bno.calibration_status  # magnetic calibration status int returned
+    print(f"Mag Calibration: {REPORT_ACCURACY_STATUS[mag_accuracy]} = {mag_accuracy}")
+    bno.save_calibration_data  # Save calibration
+
+    status = bno.ready  # test sensor status, boolean returned
+
+The following functions provide raw values directly from individual sensors, they lack the advanced on-sensor software that make the above functions more accurate:
+
+    # raw data sensor tuple of x,y,z, float and time_stamp int returned
+    x, y, z, usec = bno.raw_acceleration
+    x, y, z, usec = bno.raw_magnetic
+    
+    # raw data gyro tuple of x,y,z, celsius float, and time_stamp int returned
+    x, y, z, temp_c, usec = bno.raw_gyro
+
+
+## Euler angles, gimbal lock, and quaternions
+
+Euler angles have a problem with Gimbal lock. This is where a loss of a degree of freedom occurs when two rotational axes align, which means certain orientations have multiple representations. There was a famous example of this on Apollo 11.
+Quaternions avoid this problem because they represent a rotation as a single axis and an angle, providing a unique representation for every possible orientation. 
+
+https://base.movella.com/s/article/Understanding-Gimbal-Lock-and-how-to-prevent-it?language=en_US
+https://en.wikipedia.org/wiki/Gimbal_lock
 
 ## i2c Issues with speed and data quality
 
