@@ -68,16 +68,6 @@ Additional reports:
 
 There are additional sensor reports that this driver has not fully implemented. See code and references for details.
 
-## Option to Change Sensor Report Frequency
-
-The default sensor report frequency is 20 Hz. The number of reports per second that the BNO08X can reliably deliver is dependent on the interface bandwidth
-and the number of reports that a BNO08X is asked to generate. I2C will definitely limit this frequency (est 10 to 50 Hz with a few reports). One should consider SPI for higher frequencies.
-Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type. Some sensor reports can be updated at 400 to 100 Hz on SPI (untested). If your code request faster than the report feature frequency specified, repeated values will be returned.
-
-Before getting sensor results the reports must be enabled:
-
-    bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # for accelerometer at 40 Hertz
-
 ## Getting the sensor results:
 
 Sensors values can be accessed with:
@@ -126,6 +116,15 @@ The following functions provide raw values directly from individual sensors, the
     # raw data gyro tuple of x,y,z, celsius float, and time_stamp int returned
     x, y, z, temp_c, usec = bno.raw_gyro
 
+## Option to Change Sensor Report Frequency
+
+The default sensor report frequency is 20 Hz. The number of reports per second that the BNO08X can reliably deliver is dependent on the interface bandwidth
+and the number of reports that a BNO08X is asked to generate. I2C will definitely limit this frequency (est 10 to 50 Hz with a few reports). One should consider SPI for higher frequencies.
+Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type. Some sensor reports can be updated at 400 to 100 Hz on SPI (untested). If your code request faster than the report feature frequency specified, repeated values will be returned.
+
+Before getting sensor results the reports must be enabled:
+
+    bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # for accelerometer at 40 Hertz
 
 ## Euler angles, gimbal lock, and quaternions
 
