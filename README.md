@@ -11,9 +11,9 @@ bno08x MicroPython driver for i2c, spi, uart on MicroPython
 
 This library has been tested with BNO086 sensor. It should work with BNO080 and BNO085 sensors. It has been tested with Raspberry Pico 2 W
 
-## Setting up the Driver
+## Setting up to use the Sensor
 
-### I2C
+### I2C Setup
 
     # import the library
     from i2c import BNO08X_I2C
@@ -137,6 +137,20 @@ https://en.wikipedia.org/wiki/Gimbal_lock
 ## I2C Issues with speed and data quality
 
 Unfortunately, The BNO080, BNO085, and BNO086 all use **_non-standard clock stretching_** on the I2C. This can cause a variety of issues including report errors and the need to restart sensor. Clock stretching interferes with various chips (ex: RP2) in different ways. If you see sporadic results this may be part of the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
+
+## SPI Setup
+
+    from machine import SPI, Pin
+    from spi import BNO08X_SPI
+
+    reset_pin = Pin(16, Pin.OUT)  # Reset, tells BNO (INT) to reset
+    int_pin = Pin(17, Pin.IN, Pin.PULL_UP)  # Interrupt, BNO (RST) signals when ready
+    cs = Pin(21, Pin.OUT)  # cs for SPI
+
+    spi = SPI(1, sck=Pin(18), mosi=Pin(19), miso=Pin(20), baudrate=3_000_000, polarity=0, phase=0)
+    print(spi)
+
+    bno = BNO08X_SPI(spi, cs, int_pin, reset_pin, debug=False)
 
 ## References
 
