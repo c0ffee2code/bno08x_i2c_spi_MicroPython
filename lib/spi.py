@@ -18,40 +18,43 @@ class BNO08X_SPI(BNO08X):
     """Library for the BNO08x IMUs on SPI
 
     Args:
-        spi_bus, cspin, intpin, resetpin, baudrate=1_000_000, debug=False
-        spi_bus: The SPI bus used with BNO08x
-        cspin: CS pin to signal reads or writes
-        intpin: to know when BNO08x is ready
-        resetpin: to Reset BNO08x
-        baudrate: Maximum of 3 MHz, TODO wny does this defaults to 1_000_000
-        debug (bool, optional): Enables print statements used for debugging. Defaults to False.
+        spi_bus: SPI bus object
+        cs_pin: SPI CS pin to signal reads or writes
+        reset_pin: optionl reset to BNO08x
+        int_pin=None: optional int_pin to get signal when BNO08x is ready
+        baudrate: (default 1 MHz, max 3 MHz)
+        debug: Enables optional logging prints used for debugging driver
     """
 
-    def __init__(self, spi_bus, cspin, intpin, resetpin, baudrate=1_000_000, debug=False):
+    def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, baudrate=1_000_000, debug=False):
+
+        # BNO08X Data sheet (1.2.4.2 SPI Operation) requires CPOL = 1 and CPHA = 1.
+        # CPOL is SPI polarity=1 and CPHA is SPI phase=1.
         self._spi = spi_bus
-        self._cs = cspin
-        self._int = intpin
-        self._reset = resetpin
-        self._data_buffer = bytearray(DATA_BUFFER_SIZE)
-        # ensure CS is de-asserted by default
+        self._spi.init(baudrate=baudrate, polarity=1, phase=1)
+        
+        self._reset = reset_pin
+        self._int = int_pin
+        
+        self._cs = cs_pin  # ensure CS is de-asserted by default
         try:
             self._cs.value(1)
         except AttributeError:
             pass
-        super().__init__(i2c_bus=None, address=None, reset_pin=resetpin, int_pin=intpin, debug=debug)
+
+        super().__init__(reset_pin=reset_pin, int_pin=int_pin, debug=debug)
 
 
     def hard_reset(self):
 
-        print("Hard resetting...")
+        print("\t\t *** Hard Reset start...")
         self._reset.value(1)
-        sleep_ms(15)
+        sleep_ms(10)
         self._reset.value(0)
-        sleep_ms(15)
+        sleep_ms(1)  # only 10 ns required
         self._reset.value(1)
-        sleep_ms(300)
+        sleep_ms(100)  # 6.5.3 says need 90 ms + 4 ms
         self._wait_for_int()
-        print("_wait_for_int() returned")
         sleep_ms(50)
         self._read_packet()
 
@@ -70,19 +73,12 @@ class BNO08X_SPI(BNO08X):
 
     def soft_reset(self):
         """Reset the sensor to an initial unconfigured state"""
-        # print("Soft resetting...", end="")
-        # data = bytearray(1)
-        # data[0] = 1
-        # _seq = self._send_packet(BNO_CHANNEL_EXE, data)
-        # time.sleep(0.5)
-
         for _i in range(3):
             try:
                 _packet = self._read_packet()
             except PacketError:
                 sleep_ms(100)
-        # print("OK!")
-        # all is good!
+
 
     def _read_into(self, buf, start=0, end=None):
         self._wait_for_int()
@@ -98,7 +94,7 @@ class BNO08X_SPI(BNO08X):
         sleep_us(1)
         self._spi.readinto(memoryview(buf)[start:end], 0x00)
         self._cs.value(1)
-        self._dbg(f"SPI read {end - start} bytes:", [hex(x) for x in buf[start:end]])
+        #self._dbg(f"SPI read {end - start} bytes:", [hex(x) for x in buf[start:end]])
 
     def _read_header(self):
         """Reads the first 4 bytes available as a header"""
@@ -112,13 +108,12 @@ class BNO08X_SPI(BNO08X):
         self._spi.readinto(memoryview(self._data_buffer)[:4], 0x00)
         self._cs.value(1)
         self._dbg("")
-        self._dbg("SHTP READ packet header: ", [hex(x) for x in self._data_buffer[:4]])
+        #self._dbg("SHTP READ packet header: ", [hex(x) for x in self._data_buffer[:4]])
 
     def _read_packet(self):
         self._read_header()
         halfpacket = False
 
-        print("_read_packet", [hex(x) for x in self._data_buffer[0:4]])
         if self._data_buffer[1] & 0x80:
             halfpacket = True
         header = Packet.header_from_buffer(self._data_buffer)

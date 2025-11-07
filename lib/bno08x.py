@@ -542,8 +542,8 @@ class BNO08X:
 
     """
 
-    def __init__(self, i2c_bus, address=None, reset_pin=None, int_pin=None, debug=False) -> None:
-        self._debug: bool = debug
+    def __init__(self, reset_pin=None, int_pin=None, debug=False) -> None:
+        self._debug = debug
         self._reset_pin = reset_pin
         self._int_pin = int_pin  # TODO: need to implement
         self._dbg("********** __init__ *************")
@@ -566,39 +566,39 @@ class BNO08X:
         # for saving the most recent reading when decoding several packets
         self._readings = {}
         self.initialize()
-        self._dbg("********** End __init__ *************")
+        self._dbg("********** End __init__ *************\n")
 
-    def initialize(self) -> None:
-        """Initialize the sensor"""
-        for _ in range(3):
+#     def initialize(self) -> None:
+#         """Initialize the sensor"""
+#         for _ in range(3):
+#             self.hard_reset()
+#             self.soft_reset()
+#             try:
+#                 if self._check_id():
+#                     return
+#             except Exception:
+#                 sleep_ms(500)
+#         else:
+#             raise RuntimeError("Could not read ID")
+
+    def initialize(self):
+        if self._reset_pin:
             self.hard_reset()
+            reset_type = "Hard"
+        else:
             self.soft_reset()
+            reset_type = "Soft"
+    #
+        for attempt in range(3):
             try:
                 if self._check_id():
+                    self._dbg(f"{reset_type} reset successful")
                     return
-            except Exception:
-                sleep_ms(500)
-        else:
-            raise RuntimeError("Could not read ID")
-
-    #     def initialize(self):
-    #         if self._reset_pin:
-    #             self.hard_reset()
-    #             reset_type = "hardware"
-    #         else:
-    #             self.soft_reset()
-    #             reset_type = "software"
+            except OSError:
+                pass
+            sleep_ms(600)
     #
-    #         for attempt in range(3):
-    #             try:
-    #                 if self._check_id():
-    #                     self._dbg(f"{reset_type} reset successful")
-    #                     return
-    #             except OSError:
-    #                 pass
-    #             sleep_ms(600)
-    #
-    #         raise RuntimeError(f"Failed to get valid ID after {reset_type} reset")
+        raise RuntimeError(f"Failed to get valid ID after {reset_type} reset")
 
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
     @property
