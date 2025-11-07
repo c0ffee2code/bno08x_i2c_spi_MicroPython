@@ -542,9 +542,10 @@ class BNO08X:
 
     """
 
-    def __init__(self, i2c_bus, address=None, reset_pin=None, debug=False) -> None:
+    def __init__(self, i2c_bus, address=None, reset_pin=None, int_pin=None, debug=False) -> None:
         self._debug: bool = debug
         self._reset_pin = reset_pin
+        self._int_pin = int_pin  # TODO: need to implement
         self._dbg("********** __init__ *************")
         self._data_buffer: bytearray = bytearray(DATA_BUFFER_SIZE)
         self._data_buffer_memoryview = memoryview(self._data_buffer)
@@ -598,7 +599,8 @@ class BNO08X:
     #             sleep_ms(600)
     #
     #         raise RuntimeError(f"Failed to get valid ID after {reset_type} reset")
-
+    
+    ############ USER VISIBLE REPORT FUNCTIONS ###########################
     @property
     def magnetic(self):
         """A tuple of the current magnetic field measurements on the X, Y, and Z axes"""
@@ -875,6 +877,7 @@ class BNO08X:
             if self._dcd_saved_at > start_time:
                 return
         raise RuntimeError("Could not save calibration data")
+
 
     ############### private/helper methods ###############
     # # decorator?
