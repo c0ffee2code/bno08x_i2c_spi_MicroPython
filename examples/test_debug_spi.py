@@ -19,10 +19,10 @@ cs = Pin(17, Pin.OUT, value=1)  # cs for SPI
 spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=1_000_000)
 
 print("Start")
-print(spi)
-print("====================================")
+bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, debug=True)
 
-bno = BNO08X_SPI(spi, cs, int_pin, reset_pin, debug=True)
+print(spi)  # polarity=1, phase=1 for bno08x
+print("====================================")
 
 bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
 bno.enable_feature(BNO_REPORT_MAGNETOMETER, 20)
