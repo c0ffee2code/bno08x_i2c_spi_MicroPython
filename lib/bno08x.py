@@ -542,10 +542,13 @@ class BNO08X:
 
     """
 
-    def __init__(self, reset_pin=None, int_pin=None, debug=False) -> None:
+    def __init__(self, reset_pin=None, int_pin=None, cs_pin=None, wake_pin=None, debug=False) -> None:
+
         self._debug = debug
         self._reset_pin = reset_pin
-        self._int_pin = int_pin  # TODO: need to implement
+        self._int_pin = int_pin
+        self._wake_pin = wake_pin
+        self._cs_pin = cs_pin
         self._dbg("********** __init__ *************")
         self._data_buffer: bytearray = bytearray(DATA_BUFFER_SIZE)
         self._data_buffer_memoryview = memoryview(self._data_buffer)
@@ -568,18 +571,18 @@ class BNO08X:
         self.initialize()
         self._dbg("********** End __init__ *************\n")
 
-#     def initialize(self) -> None:
-#         """Initialize the sensor"""
-#         for _ in range(3):
-#             self.hard_reset()
-#             self.soft_reset()
-#             try:
-#                 if self._check_id():
-#                     return
-#             except Exception:
-#                 sleep_ms(500)
-#         else:
-#             raise RuntimeError("Could not read ID")
+    #     def initialize(self) -> None:
+    #         """Initialize the sensor"""
+    #         for _ in range(3):
+    #             self.hard_reset()
+    #             self.soft_reset()
+    #             try:
+    #                 if self._check_id():
+    #                     return
+    #             except Exception:
+    #                 sleep_ms(500)
+    #         else:
+    #             raise RuntimeError("Could not read ID")
 
     def initialize(self):
         if self._reset_pin:
@@ -588,16 +591,21 @@ class BNO08X:
         else:
             self.soft_reset()
             reset_type = "Soft"
-    #
+        #
         for attempt in range(3):
             try:
                 if self._check_id():
                     self._dbg(f"{reset_type} reset successful")
                     return
+                if self._check_id():
+                    self._dbg(f"{reset_type} reset successful")
+                    sleep_ms(100)  # Give SHTP time,  TODO BRC revisit if this is needed
+                    self._init_complete = True
+                    return
             except OSError:
                 pass
             sleep_ms(600)
-    #
+        #
         raise RuntimeError(f"Failed to get valid ID after {reset_type} reset")
 
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
@@ -923,13 +931,39 @@ class BNO08X:
 
         raise RuntimeError("Timed out waiting for a packet on channel", channel_number)
 
+    #     def _wait_for_packet(self, timeout: float = _PACKET_READ_TIMEOUT) -> Packet:
+    #         start_time = ticks_ms()
+    #         while _elapsed_sec(start_time) < timeout:
+    #             if not self._data_ready:
+    #                 continue
+    #             new_packet = self._read_packet()
+    #             return new_packet
+    #         raise RuntimeError("Timed out waiting for a packet")
+    # --- in bno08x.py (replace original _wait_for_packet) ---
     def _wait_for_packet(self, timeout: float = _PACKET_READ_TIMEOUT) -> Packet:
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < timeout:
-            if not self._data_ready:
-                continue
-            new_packet = self._read_packet()
-            return new_packet
+            new_packet = None
+
+            try:
+                new_packet = self._read_packet(wait=False)
+            except PacketError:
+                # PacketError if header length is 0 or 0xFFFF (no data ready)
+                pass
+
+            if new_packet:
+                self._dbg("SUCCESS: Non-blocking read returned a packet.")  # <-- ADD THIS
+                return new_packet
+
+            if self._data_ready:
+                try:
+                    self._dbg("SUCCESS: INT asserted, performing blocking read.")  # <-- ADD THIS
+                    new_packet = self._read_packet(wait=True)
+                    return new_packet
+                except PacketError:
+                    continue  # Skip and try again
+            sleep_ms(1)
+
         raise RuntimeError("Timed out waiting for a packet")
 
     # update the cached sequence number so we know what to increment from
@@ -1090,6 +1124,36 @@ class BNO08X:
         return set_feature_report
 
     # Enable a given feature of the BNO08x (See Hillcrest 6.5.4)
+    #     def enable_feature(self, feature_id, freq=None):
+    #         self._dbg("ENABLING FEATURE ID...", feature_id)
+    #
+    #         set_feature_report = bytearray(17)
+    #         set_feature_report[0] = _SET_FEATURE_COMMAND
+    #         set_feature_report[1] = feature_id
+    #         if freq is not None:
+    #             AVAIL_REPORT_FREQ[feature_id] = freq
+    #         report_interval = int(1_000_000 / AVAIL_REPORT_FREQ[feature_id])  # delay in micro_s
+    #         pack_into("<I", set_feature_report, 5, report_interval)
+    #         if feature_id == BNO_REPORT_ACTIVITY_CLASSIFIER:
+    #             pack_into("<I", set_feature_report, 13, _ENABLED_ACTIVITIES)
+    #
+    #         feature_dependency = _RAW_REPORTS.get(feature_id, None)
+    #         # if the feature was enabled it will have a key in the readings dict
+    #         if feature_dependency and feature_dependency not in self._readings:
+    #             self._dbg("\tEnabling feature dependency:", feature_dependency)
+    #             self.enable_feature(feature_dependency)
+    #
+    #         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
+    #         sleep_ms(50)  # Delay for bno08x to process commenad
+    #
+    #         start_time = ticks_ms()
+    #         while _elapsed_sec(start_time) < _FEATURE_ENABLE_TIMEOUT:
+    #             self._process_available_packets(max_packets=10)
+    #             self._dbg("Feature IDs", self._readings)
+    #             if feature_id in self._readings:
+    #                 return
+    #         raise RuntimeError("BNO08X_I2C : ENABLING FEATURE ID : Was not able to enable feature", feature_id)
+
     def enable_feature(self, feature_id, freq=None):
         self._dbg("ENABLING FEATURE ID...", feature_id)
 
@@ -1098,26 +1162,51 @@ class BNO08X:
         set_feature_report[1] = feature_id
         if freq is not None:
             AVAIL_REPORT_FREQ[feature_id] = freq
-        report_interval = int(1_000_000 / AVAIL_REPORT_FREQ[feature_id])  # delay in micro_s
+        report_interval = int(1_000_000 / AVAIL_REPORT_FREQ[feature_id])
         pack_into("<I", set_feature_report, 5, report_interval)
         if feature_id == BNO_REPORT_ACTIVITY_CLASSIFIER:
             pack_into("<I", set_feature_report, 13, _ENABLED_ACTIVITIES)
 
         feature_dependency = _RAW_REPORTS.get(feature_id, None)
-        # if the feature was enabled it will have a key in the readings dict
         if feature_dependency and feature_dependency not in self._readings:
             self._dbg("\tEnabling feature dependency:", feature_dependency)
             self.enable_feature(feature_dependency)
 
-        self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
+        # Wake pulse for BNO08x to process the command and assert INT.
+        if self._wake_pin is not None:
+            self._dbg(f"WAKE Pin detected: Sending 5 ms Wake-up pulse.")
+            self._wake_pin.value(0)
+            sleep_ms(5)
+            self._wake_pin.value(1)
+            sleep_ms(5)
 
+        # Send command
+        self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
+        sleep_ms(50)
+
+        # Aggressive Polling
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < _FEATURE_ENABLE_TIMEOUT:
-            self._process_available_packets(max_packets=10)
-            self._dbg("Feature IDs", self._readings)
+
+            # single, non-blocking header read.
+            try:
+                new_packet = self._read_packet(wait=False)
+                self._dbg("Got a packet via aggressive non-blocking read.")
+
+                # Add the feature to readings with first packet 
+                self._readings[feature_id] = True
+                self._handle_packet(new_packet)
+
+            except PacketError:
+                pass
+
             if feature_id in self._readings:
+                self._dbg(f"Feature ID {feature_id} enabled.")
                 return
-        raise RuntimeError("BNO08X_I2C : ENABLING FEATURE ID : Was not able to enable feature", feature_id)
+
+            sleep_ms(5)  # polling delay
+
+        raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {feature_id}")
 
     def set_orientation(self, quaternion):
         return  # Procedure to be completed and corrected
