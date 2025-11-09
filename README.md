@@ -161,6 +161,21 @@ Ceva specifies that PS0 and PS1 should be high for SPI, but PS0 is driven high.,
 
 UART has not been implemented.
 
+## Report Maximum Frequencioes
+
+| **Feature**             | **Max Frequency (Hz)** | **msec/Report** |
+|-------------------------|------------------------|-----------------|
+| Composite Gyro Rotation | 1000                   | 1.0 ms          |
+| Accelerometer           | 500                    | 2.0 ms          |
+| Rotation Vector         | 400                    | 2.5 ms          |
+| Gaming Rotation         | 400                    | 2.5 ms          |
+| Gravity                 | 400                    | 2.5 ms          |
+| Linear Acceleration     | 400                    | 2.5 ms          |
+| Gyroscope               | 400                    | 2.5 ms          |
+| Magnetometer            | 100                    | 10.0 ms         |
+| Geomagnetic Rotation    | 90                     | 11.1 ms         |
+| (report default)        | 20                     | 50.0 ms         |
+
 ## References
 
 The CEVA BNO085 and BNO086 9-axis sensors are made by Ceva (https://www.ceva-ip.com). They are based on Bosch hardware but use Hillcrest Labs’ proprietary sensor fusion software. BNO086 is backwards compatible with BNO085 and both are pin-for-pin replacements for Bosch Sensortec’s discontinued BNO055 and BMF055 sensors.
