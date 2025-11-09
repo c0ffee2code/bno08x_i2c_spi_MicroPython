@@ -69,15 +69,22 @@ class BNO08X_SPI(BNO08X):
         self._dbg("*** Hard Reset End, awaiting Acknowledgement")
 
     def _wait_for_int(self):
+        """
+        1.2.4.1: On the BNO085/BNO086, if the host fails to respond to the assertion of H_INTN within approximately 10 ms, the
+        BNO085/BNO086 will timeout, deassert H_INTN and retry the operation. Delays in responding to H_INTN cause
+        lost processing time on the BNO085/BNO086. Frequent delays will cause process starvation and some
+        calculations will not be completed. The result is that some outputs will have errors. To avoid this problem H_INTN
+        should be typically handled within 1/10 of the fastest sensor period.
+
+        """
         start_time = ticks_ms()
 
-        # Pulse WAKE (PS0) low to ensure BNO08x is out of sleep before Poll INT
         if self._wake is not None and self._wake.value() == 1:
-            self._dbg("WAKE Pulse before INT wait.")
+            self._dbg("WAKE Pulse to ensure BNO08x is out of sleep before INT.")
             self._wake.value(0)
-            sleep_ms(5)
+            sleep_us(1)
             self._wake.value(1)
-            sleep_ms(40)  # TODO BRC, how long?
+            # sleep_ms(1)  # 6.5.4. BNO08X wakeup from wake signal assert (twk) 150 µs
 
         if self._int.value() == 0:
             self._dbg("INT is active low (0) on entry.")
@@ -111,7 +118,7 @@ class BNO08X_SPI(BNO08X):
             end = len(buf)
         if end <= start:
             return
-        
+
         self._cs.value(0)
         sleep_us(1)
         self._spi.readinto(memoryview(buf)[start:end], 0x00)

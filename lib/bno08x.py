@@ -47,7 +47,7 @@ from struct import pack_into, unpack_from
 
 from collections import namedtuple
 from micropython import const
-from utime import ticks_ms, sleep_ms, ticks_diff
+from utime import ticks_ms, ticks_diff, sleep_ms, sleep_us
 
 # import support files
 from debug import channels, reports
@@ -747,15 +747,23 @@ class BNO08X:
         except KeyError:
             raise RuntimeError("No linear acceleration report found, is it enabled?") from None
 
+#     @property
+#     def acceleration(self):
+#         """A tuple representing the acceleration measurements on the X, Y, and Z
+#         axes in meters per second squared"""
+#         self._process_available_packets()
+#         try:
+#             return self._report_values[BNO_REPORT_ACCELEROMETER]
+#         except KeyError:
+#             raise RuntimeError("No acceleration report found, is it enabled?") from None
+
     @property
     def acceleration(self):
-        """A tuple representing the acceleration measurements on the X, Y, and Z
-        axes in meters per second squared"""
-        self._process_available_packets()
+        self._process_available_packets()  # consume any packets waiting
         try:
             return self._report_values[BNO_REPORT_ACCELEROMETER]
         except KeyError:
-            raise RuntimeError("No acceleration report found, is it enabled?") from None
+            raise RuntimeError("No acceleration report found, is it enabled?")
 
     @property
     def gravity(self):
@@ -1208,13 +1216,15 @@ class BNO08X:
             self._dbg("\tEnabling feature dependency:", feature_dependency)
             self.enable_feature(feature_dependency)
 
-        # Wake pulse for BNO08x to process the command and assert INT.
+        # TODO: Understand pulse and wait after pulse need to be much longer than in spi.py
+        # in order for enable features to work here
         if self._wake_pin is not None:
-            self._dbg(f"WAKE Pin detected: Sending 5 ms Wake-up pulse.")
-            self._wake_pin.value(0)
-            sleep_ms(5)
-            self._wake_pin.value(1)
-            sleep_ms(5)
+            self._dbg("WAKE Pulse to ensure BNO08x is out of sleep before INT.")
+            self._wake.value(0)
+            sleep_ms(1)
+            self._wake.value(1)
+            sleep_ms(40)  # 6.5.4. BNO08X wakeup from wake signal assert (twk) 150 µs
+            
 
         # Send command
         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
