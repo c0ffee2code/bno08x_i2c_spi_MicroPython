@@ -4,8 +4,7 @@
 from time import sleep
 from utime import sleep_ms
 
-from bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, \
-    BNO_REPORT_ACCELEROMETER, BNO_REPORT_ROTATION_VECTOR
+from bno08x import BNO_REPORT_ACCELEROMETER
 from machine import SPI, Pin
 from spi import BNO08X_SPI
 
@@ -18,7 +17,7 @@ cs = Pin(17, Pin.OUT, value=1)  # cs for SPI
 # spi0_TX = Pin(19, Pin.OUT, value=0)  # spi0_TX (MOSI) - connected to BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
 
-spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=1_000_000)
+spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000)
 
 print("Start")
 bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=False)

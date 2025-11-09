@@ -141,16 +141,15 @@ Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stre
 ## SPI Setup
 
 In order to use SPI on most sensor boards instead of I2C you must often have to add ONE solder blob on PS1. 
-On the back side of Sparkfun BNO086 and Adafruit BNO085 one needs as older blob to bridge PS1.
-PS0 must be connected to a GPIO so that the SPI's WAKE functionality can be performed.
-Ceva specifies that PS0 and PS1 during SPI operation, but PS0 is set low and then high in driver to wake bno08x.
+On the back side of Sparkfun BNO086 and Adafruit BNO085, one needs a solder blob to bridge PS1.
+PS0 must be connected to a GPIO so it can be pulsed low to serve as the SPI's WAKE functionality can be performed.
+Ceva specifies that PS0 and PS1 must be high during SPI operation, but PS0 is set low and then high in driver to wake bno08x.
 
-
-
-
+If you put a solder blob on both PS0 and PS1, this driver is likely to hang.
 
     from machine import SPI, Pin
     from spi import BNO08X_SPI
+    from bno08x import BNO_REPORT_ACCELEROMETER
 
     int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, enables BNO to signal when ready
     reset_pin = Pin(15, Pin.OUT)  # Reset to signal BNO to reset
@@ -158,7 +157,7 @@ Ceva specifies that PS0 and PS1 during SPI operation, but PS0 is set low and the
     wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
 
 
-    spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000, polarity=0, phase=0)
+    spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000)
     print(spi)
 
     bno = BNO08X_SPI(spi, cs, int_pin, reset_pin, wake_pin, debug=False)
