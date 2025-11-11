@@ -1,6 +1,6 @@
-# more_reports.py
+# more_reports_spi.py
 #
-# BNO08x Micropython additioanl report SPI example program
+# BNO08x Micropython additional report SPI example program
 
 from bno08x import *
 from machine import SPI, Pin
@@ -17,10 +17,10 @@ cs = Pin(17, Pin.OUT, value=1)  # cs for SPI
 # spi0_TX = Pin(19, Pin.OUT, value=0)  # spi0_TX (MOSI) - connected to BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
 
-spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=1_000_000)
+spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000)
 
 print("Start")
-bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=True)
+bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=False)
 print(spi)  # polarity=1, phase=1 for bno08x
 print("====================================\n")
 
