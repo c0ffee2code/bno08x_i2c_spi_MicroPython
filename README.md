@@ -181,6 +181,21 @@ UART has not been implemented.
 | Geomagnetic Rotation    | 90                     | 11.1 ms         |
 | (report default)        | 20                     | 50.0 ms         |
 
+Report frequencies should be enabled before requesting reports
+
+    bno.enable_feature(BNO_REPORT_ACCELEROMETER, 100)  # Enable accelerometer reports at 100 Hertz
+
+When the frequency of the sensor is set in enable_feature, it should be viewed as a suggestion to operate at that interval.
+If the sensor cannot operate as requested, it may operate faster or slower (SH-2 datasheet 5.4.1 Rate Control).
+
+On can access the sensors report period for each with this function. Each sensor may be faster or slower in a single program.
+
+    accelerometer_period_us = bno.report_period_us(BNO_REPORT_ACCELEROMETER)
+    period_ms = accelerometer_period_us / 1000.0
+    print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+
+With a single feature, we've seen the above requested 100 Hz have the sensor report at 125Hz. With multiple featues we've also seen 20Hz changed to 10 Hz.
+
 ## References
 
 The CEVA BNO085 and BNO086 9-axis sensors are made by Ceva (https://www.ceva-ip.com). They are based on Bosch hardware but use Hillcrest Labs’ proprietary sensor fusion software. BNO086 is backwards compatible with BNO085 and both are pin-for-pin replacements for Bosch Sensortec’s discontinued BNO055 and BMF055 sensors.
