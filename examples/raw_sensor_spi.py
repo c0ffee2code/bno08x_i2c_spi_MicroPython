@@ -30,7 +30,17 @@ bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER, 20)
 bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER, 20)
 bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE, 20)
 print("BNO08x sensors enabled\n")
-bno.print_report_period()
+
+print("Raw Sensor reporting frequencies:")
+period_us = bno.report_period_us(BNO_REPORT_RAW_ACCELEROMETER)
+period_ms = period_us / 1000.0
+print(f"Raw Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+period_us = bno.report_period_us(BNO_REPORT_RAW_MAGNETOMETER)
+period_ms = period_us / 1000.0
+print(f"Raw Magnetometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+period_us = bno.report_period_us(BNO_REPORT_RAW_GYROSCOPE)
+period_ms = period_us / 1000.0
+print(f"Raw Gyroscope: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
 cpt = 0
 timer_origin = ticks_ms()
