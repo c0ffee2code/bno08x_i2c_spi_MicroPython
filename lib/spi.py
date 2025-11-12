@@ -108,10 +108,11 @@ class BNO08X_SPI(BNO08X):
             if self._debug and ticks_ms() % 500 < 5:  # Log every ~0.5 seconds
                 self._dbg(f"INT value still high (1) at T={_elapsed_sec(start_time):.3f}s")
 
-            sleep_us(100)  # TODO How long?
+            sleep_us(100) # TODO How long?
 
         self._dbg(f"Timeout (3.0s) reached. INT pin state: {self._int.value()}")
         raise RuntimeError("Timeout waiting for INT to go low")
+
 
     def _read_into(self, buf, start=0, end=None):
 
@@ -143,6 +144,9 @@ class BNO08X_SPI(BNO08X):
         sleep_us(1)
         self._spi.readinto(memoryview(self._data_buffer)[:4], 0x00)
         self._cs.value(1)
+        
+        #TODO BRC remove, this is a lot of log ata
+        self._dbg(f"RAW HEADER: {[hex(b) for b in self._data_buffer[0:4]]}")
 
         if not wait:
             packet_len = self._data_buffer[0] | (self._data_buffer[1] << 8)
@@ -199,6 +203,7 @@ class BNO08X_SPI(BNO08X):
             print(new_packet)
         self._update_sequence_number(new_packet)
         return new_packet
+
 
     def _send_packet(self, channel, data):
         data_length = len(data)
