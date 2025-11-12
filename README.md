@@ -24,14 +24,19 @@ This library has been tested with BNO086 sensor. It should work with BNO080 and 
 
     # set up the BNO sensor on I2C
     bno = BNO08X_I2C(i2c0, address=0x4b)
+- 
+- address : if using 2 BNO08x each needs a separate address (depending on board, add solder jump or cut wire).
 
 Optional parameters: 
 
-    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin==Pin(13), debug=False)
+    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin=Pin(13), wake_pin=Pin(???), debug=False)
 
-- address : if using 2 BNO08x each needs a separate address (depending on board, add solder jump or cut wire).
+Required by SPI
 - reset_pin : required to enable sensor hard reset (Pin object, not number). If not defined, a soft reset is used.
 - int_pin : required to synchronize sensor time with host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200-millisecond host-based timestamps are adequate, or if timestamps are not required.
+- int_pin : required to synchronize sensor time with host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200-millisecond host-based timestamps are adequate, or if timestamps are not required.
+
+Optional
 - debug : print very detailed logs, mainly for debugging driver.
 
 ## Enable the sensor reports
