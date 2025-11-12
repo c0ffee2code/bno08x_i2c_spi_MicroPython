@@ -1,36 +1,28 @@
-# magnetic_calibration_spi.py
+# magnetic_calibration.py
 #
 # TODO: BRC save_calibration_data works for i2c, but not spi
 #
-# BNO08x Micropython magnetic SPI example program
+# BNO08x Micropython I2C example program
+# Calibration of Magnetometer magnetic accuracy report
 
-from bno08x import *
-from machine import SPI, Pin
-from spi import BNO08X_SPI
-from utime import ticks_ms, ticks_diff
 from time import sleep
 
-int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, enables BNO to signal when ready
-reset_pin = Pin(15, Pin.OUT, value=1)  # Reset to signal BNO to reset
+from i2c import *
+#BNO08X_I2C
+from bno08x import BNO_REPORT_MAGNETOMETER, REPORT_ACCURACY_STATUS
 
-# spi0_RX = Pin(16, Pin.IN)  # spi0_RX, RES (MISO) - connected to BNO SO (POCI)
-cs = Pin(17, Pin.OUT, value=1)  # cs for SPI
-# sck = Pin(18, Pin.OUT, value=0)  # sck for SPI
-# spi0_TX = Pin(19, Pin.OUT, value=0)  # spi0_TX (MOSI) - connected to BNO SI (PICO)
-wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
+from machine import I2C, Pin
+from utime import ticks_ms, ticks_diff
 
-spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000)
-
-print("Start")
-bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=False)
-print(spi)
-print("====================================\n")
+i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=100_000, timeout=200_000)
+bno = BNO08X_I2C(i2c0, address=0x4B, reset_pin=None, debug=False)
 
 bno.enable_feature(BNO_REPORT_MAGNETOMETER, 20)
 print("BNO08x reports enabled\n")
 bno.print_report_period()
+print()
 
-print("\nBegin calibration: continue until 5 secs of constant \"Medium Accuracy\" to \"High Accuracy\"")
+print("Begin calibration: continue until 5 secs of constant \"Medium Accuracy\" to \"High Accuracy\"")
 bno.begin_calibration()
 calibration_good_at = None
 save_pending = False
@@ -42,7 +34,7 @@ while True:
 
     # print accuracy value and string
     calibration_status = bno.calibration_status
-    print(f"Magnetic Calibration: \"{REPORT_ACCURACY_STATUS[calibration_status]}\" = {calibration_status}")
+    print(f"Mag Calibration: \"{REPORT_ACCURACY_STATUS[calibration_status]}\" = {calibration_status}")
     now = ticks_ms()
 
     # Check when calibration becomes "good"
@@ -65,4 +57,4 @@ while True:
         calibration_good_at = None
         save_pending = False
 
-print("Calibration done for Magnetic")
+print("calibration done")
