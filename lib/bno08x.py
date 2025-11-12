@@ -62,20 +62,15 @@ _BNO_CHANNEL_GYRO_ROTATION_VECTOR = const(5)
 _GET_FEATURE_REQUEST = const(0xFE)
 _SET_FEATURE_COMMAND = const(0xFD)
 _GET_FEATURE_RESPONSE = const(0xFC)
-
 _BASE_TIMESTAMP = const(0xFB)
 _TIMESTAMP_REBASE = const(0xFA)
-
-_SHTP_REPORT_PRODUCT_ID_RESPONSE = const(0xF8)
 _SHTP_REPORT_PRODUCT_ID_REQUEST = const(0xF9)
-
+_SHTP_REPORT_PRODUCT_ID_RESPONSE = const(0xF8)
 _FRS_WRITE_REQUEST = const(0xF7)
 _FRS_WRITE_DATA = const(0xF6)
 _FRS_WRITE_RESPONSE = const(0xF5)
-
 _FRS_READ_REQUEST = const(0xF4)
 _FRS_READ_RESPONSE = const(0xF3)
-
 _COMMAND_REQUEST = const(0xF2)
 _COMMAND_RESPONSE = const(0xF1)
 
@@ -182,7 +177,8 @@ _DEFAULT_REPORT_INTERVAL = const(50000)  # in microseconds = 50ms, 20 MHz
 _QUAT_READ_TIMEOUT = 0.500  # timeout in seconds
 _PACKET_READ_TIMEOUT = 2.000  # timeout in seconds
 _FEATURE_ENABLE_TIMEOUT = 2.0  # timeout in seconds
-_DEFAULT_TIMEOUT = 2.0  # timeout in seconds
+_DEFAULT_TIMEOUT = 2.0  # timeout in secondss
+_TIMEOUT_SHORT_MS = 100  # short sensor knows ME status, just needs to package and send (few ms)
 _BNO08X_CMD_RESET = const(0x01)
 _QUAT_Q_POINT = const(14)  # TODO dobodu sets to 0x05 ???
 _BNO_HEADER_LEN = const(4)
@@ -442,11 +438,11 @@ def _insert_command_request_report(
             "Command request reports can only have up to 9 arguments but %d were given"
             % len(command_params)
         )
-    for _i in range(12):
-        buffer[_i] = 0
     buffer[0] = _COMMAND_REQUEST
     buffer[1] = next_sequence_number
     buffer[2] = command
+    for _i in range(3, 12):
+        buffer[_i] = 0
     if command_params is None:
         return
 
@@ -847,59 +843,110 @@ class BNO08X:
                 0,  # reserved
             ]
         )
-        self._calibration_complete = False
+        self._calibration_complete = False  # Correct state management
+
+        # 2. FIX: Implement the waiting logic here, specific to starting calibration
+        start_time = ticks_ms()
+        while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
+            self._process_available_packets()
+            # This flag is set by the handler when the command succeeds.
+            if self._me_calibration_started_at > start_time:
+                return  # Success!
+
+        raise RuntimeError("Timed out waiting for calibration to start acknowledgement")
 
     @property
     def calibration_status(self) -> int:
-        """Get the status of the self-calibration"""
-        self._send_me_command(
-            [
-                0,  # calibrate accel
-                0,  # calibrate gyro
-                0,  # calibrate mag
-                _ME_GET_CAL,
-                0,  # calibrate planar acceleration
-                0,  # 'on_table' calibration
-                0,  # reserved
-                0,  # reserved
-                0,  # reserved
-            ]
-        )
-        return self._magnetometer_accuracy
+        """Get the status of the self-calibration by querying the sensor."""
+        # 1. Send the GET_CAL command (uses the now-correct _send_me_command)
+        self._send_me_command([0, 0, 0, _ME_GET_CAL, 0, 0, 0, 0, 0])
+
+        # 2. FIX: Wait for a new sensor report (updates self._magnetometer_accuracy).
+        start_time = ticks_ms()
+        old_accuracy = self._magnetometer_accuracy
+        _TIMEOUT_SHORT_MS = 100  # Using 100ms as recommended earlier
+
+        while _elapsed_sec(start_time) < (_TIMEOUT_SHORT_MS / 1000.0):  # Convert ms to seconds
+            self._process_available_packets()
+            if self._magnetometer_accuracy != old_accuracy:
+                return self._magnetometer_accuracy
+
+        print("Warning: Timed out waiting for updated calibration status.")
+        return self._magnetometer_accuracy  # Returns potentially stale data
 
     def _send_me_command(self, subcommand_params) -> None:
-        start_time = ticks_ms()
+        """Sends a generic ME Command (like CALIBRATE or GET_CAL)."""
+        # 1. Prepare and send the command (restored essential logic)
         local_buffer = self._command_buffer
         _insert_command_request_report(
-            _ME_CALIBRATE,
-            self._command_buffer,  # should use self._data_buffer :\ but send_packet don't
+            _ME_CALIBRATE,  # Command ID for ME commands
+            self._command_buffer,
             self._get_report_seq_id(_COMMAND_REQUEST),
             subcommand_params,
         )
         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
         self._increment_report_seq(_COMMAND_REQUEST)
-        while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
-            self._process_available_packets()
-            if self._me_calibration_started_at > start_time:
-                break
+
+        # ALL WAITING AND ACCURACY CHECK LOGIC HAS BEEN REMOVED.
+        # It now correctly delegates the waiting responsibility to the caller.
+
+    #     def save_calibration_data(self) -> None:
+    #         """Save the self-calibration data"""
+    #         # send a DCD save command
+    #         start_time = ticks_ms()
+    #         local_buffer = bytearray(12)
+    #         print(f"DCD Save: Sending command, seq_id={self._get_report_seq_id(_COMMAND_REQUEST)}")
+    #         _insert_command_request_report(
+    #             _SAVE_DCD,
+    #             local_buffer,  # should use self._data_buffer :\ but send_packet doesn't
+    #             self._get_report_seq_id(_COMMAND_REQUEST),
+    #             [0, 0, 0, 0, 0, 0, 0, 0, 0] # P0 to P8 (All must be 0 for DCD Save)
+    #         )
+    #         print(f"DCD Save: Buffer = {[hex(b) for b in local_buffer]}") # <-- Add this!
+    #         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
+    #         self._increment_report_seq(_COMMAND_REQUEST)
+    #         print(f"DCD Save: Entering wait loop, starting at {start_time}")
+    # #         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
+    #         while _elapsed_sec(start_time) < 5.0:
+    #
+    #             self._process_available_packets()
+    #             if self._dcd_saved_at > start_time:
+    #                 print(f"DCD Save: SUCCESS! Acknowledged at {self._dcd_saved_at}")
+    #                 return
+    #         raise RuntimeError("Could not save calibration data")
 
     def save_calibration_data(self) -> None:
-        """Save the self-calibration data"""
-        # send a DCD save command
+        """Sends the command to save the current Dynamic Calibration Data (DCD)."""
+        self._dbg("Start DCD SAVE...")
+
+        # Report ID for a Command Request is 0x02
+        data = bytearray(6)
+        data[0] = 0x02  # _SHTP_REPORT_COMMAND_REQUEST
+        data[1] = self._get_report_seq_id(0x02)  # Sequence number
+        data[2] = 0x06  # _SAVE_DCD
+        # data[3] is Reserved
+        # data[4] is Reserved
+        # data[5] is Reserved
+
+        # Send the packet on the Control Channel (0x02)
+        self._send_packet(_BNO_CHANNEL_CONTROL, data)
+
+        # Increment the report sequence number for the Command Request Report ID
+        #         self._increment_report_seq(_SHTP_REPORT_COMMAND_REQUEST)
+        self._increment_report_seq(0x02)
+
+        self._dcd_saved_at = None
         start_time = ticks_ms()
-        local_buffer = bytearray(12)
-        _insert_command_request_report(
-            _SAVE_DCD,
-            local_buffer,  # should use self._data_buffer :\ but send_packet doesn't
-            self._get_report_seq_id(_COMMAND_REQUEST),
-        )
-        self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
-        self._increment_report_seq(_COMMAND_REQUEST)
-        while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
+
+        # The BNO08X acknowledges with a Command Response (0xF1) upon success.
+        while _elapsed_sec(start_time) < 15.0:  # 5 second timeout (generous)
             self._process_available_packets()
-            if self._dcd_saved_at > start_time:
+            if self._dcd_saved_at:
+                self._dbg(f"DCD Save successful at T={_elapsed_sec(start_time):.3f}s!")
                 return
-        raise RuntimeError("Could not save calibration data")
+            sleep_ms(10)  # 10ms rest
+
+        raise RuntimeError("Could not save calibration data: Timeout waiting for Command Response acknowledgement.")
 
     ############### private/helper methods ###############
 
@@ -917,7 +964,7 @@ class BNO08X:
                 new_packet = self._read_packet()
             except PacketError:
                 # transient read errors should not block
-                self._dbg("PacketError in _process_available_packets")
+                print("PacketError in _process_available_packets")
                 # small delay prevents hammering SPI if line is unstable
                 sleep_ms(2)
                 continue
@@ -925,10 +972,11 @@ class BNO08X:
             if new_packet:
                 self._handle_packet(new_packet)
                 processed_count += 1
+                print(f"_proc_pkt: Processed packet. Count={processed_count}")
 
             # safety timeout (e.g., stuck DRDY line)
             if ticks_diff(ticks_ms(), start_time) > 50:
-                self._dbg("Timeout in _process_available_packets")
+                print("Timeout in _process_available_packets")
                 break
         flag = processed_count > 0
         self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
@@ -1063,6 +1111,7 @@ class BNO08X:
             self._dbg(f"\tBuild: {sw_build_number}")
             self._dbg("")
             self._id_read = True
+            return
 
         # Feature response (0xfc)
         # feature_report_id, feature_flags, change_sensitivity, report_interval
@@ -1071,26 +1120,49 @@ class BNO08X:
             get_feature_report = _parse_get_feature_response_report(report_bytes)
             _report_id, feature_report_id, *_remainder = get_feature_report
             self._report_values[feature_report_id] = _INITIAL_REPORTS.get(feature_report_id, (0.0, 0.0, 0.0))
+            return
 
         # Command Response (0xF1)
         if report_id == _COMMAND_RESPONSE:
             self._handle_command_response(report_bytes)
+            return
+
+        print(f"Received unexpected control report ID: {hex(report_id)}")
 
     def _handle_command_response(self, report_bytes: bytearray) -> None:
+        print("DBG:: _handle_command_response:", [hex(b) for b in report_bytes[:_report_length(_COMMAND_RESPONSE)]])
         (report_body, response_values) = _parse_command_response(report_bytes)
-
         (_report_id, _seq_number, command, _command_seq_number, _response_seq_number,) = report_body
 
         # status, accel_en, gyro_en, mag_en, planar_en, table_en, *_reserved) = response_values
         command_status, *_rest = response_values
+        self._last_cmd_rsp = (command, command_status)  # <--- ADD THIS
+
+        self._dbg(f"_handle_command_response: Command={hex(command)}, Status={command_status}")
+        print(f"CMD Rsp: Command={hex(command)}, Status={command_status}, seq={_seq_number}")
 
         if command == _ME_CALIBRATE and command_status == 0:
             self._me_calibration_started_at = ticks_ms()
+            self._dbg("_handle_command_response: ME_CALIBRATE success flag set.")
+            print("CMD Rsp: ME_CALIBRATE success flag set.")
+
+        self.last_cmd_response = {
+            "report_id": _COMMAND_RESPONSE,
+            "seq": _seq_number,
+            "command": command,
+            "status": command_status,
+        }
 
         if command == _SAVE_DCD:
+            self._dbg(f"_handle_command_response: DCD Save response detected. Status is {command_status}")
+            print(f"_handle_command_response: DCD Save response detected. Status is {command_status}")
+
             if command_status == 0:
                 self._dcd_saved_at = ticks_ms()
             else:
+                self._dbg(f"_handle_command_response: DCD Save FAILED with status {command_status}!")
+                print(f"_handle_command_response: DCD Save FAILED with status {command_status}!")
+
                 raise RuntimeError("Unable to save calibration data")
 
     def _process_report(self, report_id: int, report_bytes: bytearray) -> None:
