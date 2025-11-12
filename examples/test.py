@@ -2,7 +2,7 @@
 #
 # This program set up an SPI connection to the BNO08x sensor
 from time import sleep
-from utime import sleep_ms
+from utime import sleep_ms, ticks_ms
 
 from bno08x import BNO_REPORT_ACCELEROMETER
 from machine import SPI, Pin
@@ -24,14 +24,19 @@ bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=False)
 print(spi)  # polarity=1, phase=1 for bno08x
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
+bno.enable_feature(BNO_REPORT_ACCELEROMETER, 250)
+bno.print_report_period()
 print("BNO08x sensors enabled\n")
 
 cpt = 0
 
+start = ticks_ms()
 while True:
     cpt += 1
     accel_x, accel_y, accel_z = bno.acceleration
-    print(f"Acceleration  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
+    end = ticks_ms()
+    print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s² - {end-start} ms")
+
+    start = end
 
 

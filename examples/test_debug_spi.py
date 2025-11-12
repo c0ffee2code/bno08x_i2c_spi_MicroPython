@@ -25,13 +25,15 @@ bno = BNO08X_SPI(spi, cs, reset_pin, int_pin, wake_pin, debug=False)
 print(spi)  # polarity=1, phase=1 for bno08x
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, 10)
-bno.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR, 10)
+bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, 100)
+bno.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR, 100)
 bno.set_quaternion_euler_vector(BNO_REPORT_GAME_ROTATION_VECTOR)
-bno.enable_feature(BNO_REPORT_MAGNETOMETER, 20)
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
-bno.enable_feature(BNO_REPORT_GYROSCOPE, 20)
+bno.enable_feature(BNO_REPORT_MAGNETOMETER, 200)
+bno.enable_feature(BNO_REPORT_ACCELEROMETER, 200)
+bno.enable_feature(BNO_REPORT_GYROSCOPE, 200)
 print("BNO08x sensors enabled\n")
+bno.print_report_period()
+
 
 calibration_status = bno.calibration_status
 print(f"Mag Calibration: \"{REPORT_ACCURACY_STATUS[calibration_status]}\" = {calibration_status}")
