@@ -19,7 +19,7 @@ from utime import ticks_ms, sleep_us
 # rxi = Pin(13)
 int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, BNO (RST) signals when ready
 reset_pin = Pin(15, Pin.OUT)  # Reset, tells BNO (INT) to reset
-#wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
+# wake_pin can NOT be used, wake/PS0 must be ground
 
 uart = UART(0, baudrate=3_000_000, tx=Pin(12), rx=Pin(13))
 
