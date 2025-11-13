@@ -347,7 +347,7 @@ class PacketError(Exception):
 def _elapsed_sec(start_time):
     """
     Elapsed time between now - start_time.  You pass in start_time = ticks_ms()
-    
+
     Returns float in seconds
     """
     return ticks_diff(ticks_ms(), start_time) / 1000.0
@@ -1013,7 +1013,7 @@ class BNO08X:
     def _process_available_packets(self, max_packets: int = 10) -> None:
         """
             Read and handle up to `max_packets` packets while data-ready is active.
-            
+
         Returns: True - if processed_count > 0
         """
         processed_count = 0
@@ -1062,8 +1062,8 @@ class BNO08X:
     def _wait_for_packet(self, channel, report_id=None, timeout=0.5):
         """
         Polls the BNO08x for a specific packet response up to a timeout.
-        
-        @param channel: SHTP channel 
+
+        @param channel: SHTP channel
         @param report_id: specific SHTP ReportID to wait for (optional).
         @param timeout: Timeout duration in seconds.
         @return: received packet.
@@ -1359,9 +1359,9 @@ class BNO08X:
         """
         Enable Features the bno08x is to return.
         Called recursively since some raw require non-raw to be enabled
-        
+
         send _SET_FEATURE_COMMAND (0xfb) with feature id
-        await GET_FEATURE_RESPONSE (0xfc) 
+        await GET_FEATURE_RESPONSE (0xfc)
         both are on Channel (0x02)
         """
         self._dbg(f"ENABLING FEATURE ID... {hex(feature_id)}")
@@ -1387,12 +1387,20 @@ class BNO08X:
             self._dbg("\tEnabling feature dependency:", feature_dependency)
             self.enable_feature(feature_dependency, AVAIL_REPORT_FREQ[feature_dependency])
 
+        self._dbg("\tEnabling feature dependency:", feature_dependency)
+        print(f"UART operation reqires wake_pin is None, wake_pin={self._wake_pin}")
+        self._dbg(f"UART operation reqires wake_pin is None, wake_pin={self._wake_pin}")
+
+        # UART operation reqires self._wake_pin is None
         if self._wake_pin is not None:
             self._dbg("Enable feature WAKE Pulse to ensure BNO08x is out of sleep before INT.")
             self._wake_pin.value(0)
             sleep_ms(2)  # lower than 1ms doesn't seem to work
             self._wake_pin.value(1)
             sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
+        # TODO BRC REMOVE THIS after figure how non-wake i2c an uart handle this
+        else:
+            print(f" >>>Open Question Does UART operation need more time to Enable features")
 
         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
 
@@ -1420,7 +1428,7 @@ class BNO08X:
     # TODO document this for user, put in test code
     def report_period_us(self, feature_id):
         """
-        return 
+        return
         """
         return self._report_periods_dictionary_us[feature_id]
 
@@ -1522,7 +1530,7 @@ class BNO08X:
         self._reset_pin.value(1)
         sleep_ms(10)
         self._reset_pin.value(0)
-        sleep_ms(10)  # TODO try sleep_us(1), data sheet say only 10ns required, 
+        sleep_ms(10)  # TODO try sleep_us(1), data sheet say only 10ns required,
         self._reset_pin.value(1)
         sleep_ms(200)  # orig was 10ms, datasheet implies 94 ms required
         self._dbg("*** Hard Reset End, awaiting Acknowledgement")

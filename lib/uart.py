@@ -15,6 +15,11 @@ reset.
 Pin 5 (PS1) and Pin 6 (PS0/WAKE) are the host interface protocol selection pins. These pins should be tied to
 VDDIO and ground respectively to select the UART-SHTP interface.
 
+6.5.3 Startup timing
+The timing for BNO08X startup for I2C and SPI modes uses Reset & Interrupt.
+The host may begin communicating with the BNO08X after it has asserted high on INT.
+In UART mode, the BNO08X sends an advertisement message when it is ready to communicate.
+
 """
 
 from struct import pack_into
@@ -22,7 +27,7 @@ from struct import pack_into
 from utime import sleep_ms
 
 # Assuming bno08x.py and Packet/PacketError definitions are available
-from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE, BNO_CHANNEL_SHTP_COMMAND
+from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
 
 
 class BNO08X_UART(BNO08X):
@@ -94,6 +99,8 @@ class BNO08X_UART(BNO08X):
                 b ^= 0x20
             buf[idx] = b
         # print("UART Read buffer: ", [hex(i) for i in buf[start:end]])
+        
+# orig
 
     def _read_header(self):
         """Reads the first 4 bytes available as a header"""
@@ -126,6 +133,7 @@ class BNO08X_UART(BNO08X):
         self._read_into(self._data_buffer, end=4)
 
         # print("SHTP Header:", [hex(x) for x in self._data_buffer[0:4]])
+    
 
     def _read_packet(self, wait=None):
         self._read_header()
@@ -159,6 +167,10 @@ class BNO08X_UART(BNO08X):
 
         return new_packet
 
+# defined in main class, but simplified to const's directly 
+# BNO_CHANNEL_SHTP_COMMAND = const(0)
+# BNO_CHANNEL_EXE = const(1)
+
     @property
     def _data_ready(self):
         self._dbg(f"_data_ready: {self._uart.any()}")
@@ -169,17 +181,17 @@ class BNO08X_UART(BNO08X):
         print("Soft resetting...", end="")
 
         data = bytearray([0, 1])
-        self._send_packet(BNO_CHANNEL_SHTP_COMMAND, data)
+        self._send_packet(0x00, data)
         sleep_ms(500)
 
         # read the SHTP announce command packet response
         while True:
             packet = self._read_packet()
-            if packet.channel_number == BNO_CHANNEL_SHTP_COMMAND:
+            if packet.channel_number == 0x00:
                 break
 
         data = bytearray([1])
-        self._send_packet(BNO_CHANNEL_EXE, data)
+        self._send_packet(0x01, data)
         sleep_ms(500)
-        self._send_packet(BNO_CHANNEL_EXE, data)
+        self._send_packet(0x01, data)
         sleep_ms(500)

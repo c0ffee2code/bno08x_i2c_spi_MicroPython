@@ -26,7 +26,9 @@ uart = UART(0, baudrate=3_000_000, tx=Pin(12), rx=Pin(13))
 print("Start")
 print("====================================")
 
-bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=True)
+bno = BNO08X_UART(uart, debug=True)
+#bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=True)
+
 
 bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
 
