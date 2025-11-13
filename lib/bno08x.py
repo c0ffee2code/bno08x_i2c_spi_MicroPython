@@ -28,13 +28,16 @@ Implementation Notes
 
 * MicroPython
 
+TODO: updating sensor values more asychronously
+TODO: BRC test i2c with Reset & Interrupt pins (no wake?)
+TODO: BRC write & test UART (take wake wire off SPI)
 TODO: BRC I2c add quick fail and good error message if no i2c devices found
 TODO: BRC add protection to ensure only pin objects, not numbers are passed in (spi.py, i2c.py, and uart)
 TODO: BRC Euler/quaternion implementation
 TODO: BRC add TARE
 # TODO:
 # Default Reports Frequencies (Hz) - does this code have report frequencies right?
-# Calibrated Acceleration (m/s2)
+# Calibrated Acceleration (m/s^2)
 # Euler Angles (in degrees?)
 # CALIBRATION
 """

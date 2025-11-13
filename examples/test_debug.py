@@ -19,7 +19,6 @@ print("Start")
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("====================================")
 
-# TODO BRC ... Make sure WAKE_PIN=NONE in i2c.py
 bno = BNO08X_I2C(i2c0, address=0x4B, debug=False)
 #bno = BNO08X_I2C(i2c0, address=0x4B, reset_pin=reset_pin, int_pin=int_pin, debug=True)
 

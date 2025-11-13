@@ -29,12 +29,12 @@ This library has been tested with BNO086 sensor. It should work with BNO080 and 
 
 Optional parameters: 
 
-    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin=Pin(13), wake_pin=Pin(???), debug=False)
+    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin=Pin(13), wake_pin=Pin(21), debug=False)
 
 Required by SPI
-- reset_pin : required to enable sensor hard reset (Pin object, not number). If not defined, a soft reset is used.
-- int_pin : required to synchronize sensor time with host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200-millisecond host-based timestamps are adequate, or if timestamps are not required.
-- int_pin : required to synchronize sensor time with host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200-millisecond host-based timestamps are adequate, or if timestamps are not required.
+- reset_pin : Needed by SPI to operate correctly. This is also used to enable sensor hard reset (Pin object, not number). If not defined, a soft reset is used.
+- int_pin : Needed by SPI to operate correctly. Also used to synchronize sensor time with host to enable microsecond accuracy timestamps. Define a Pin object. Not required if only 200-millisecond host-based timestamps are adequate, or if timestamps are not required.
+- wake_pin : Needed by SPI to operate correctly. 
 
 Optional
 - debug : print very detailed logs, mainly for debugging driver.
@@ -200,6 +200,10 @@ On can access the sensors report period for each with this function. Each sensor
     print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
 With a single feature, we've seen the above requested 100 Hz have the sensor report at 125Hz. With multiple featues we've also seen 20Hz changed to 10 Hz.
+
+## Calibration
+
+background: https://www.youtube.com/watch?v=0rlvvYgmTvI&t=28s
 
 ## References
 
