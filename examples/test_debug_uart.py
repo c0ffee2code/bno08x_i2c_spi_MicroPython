@@ -4,9 +4,12 @@
 
 from time import sleep
 
+# from backup_lib.uart import BNO08X_UART
+# from backup_lib.bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, \
+#     BNO_REPORT_ACCELEROMETER
 from uart import BNO08X_UART
 from bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, \
-    BNO_REPORT_ACCELEROMETER,
+    BNO_REPORT_ACCELEROMETER
 
 from machine import UART, Pin
 from utime import ticks_ms, sleep_us
@@ -26,11 +29,11 @@ uart = UART(0, baudrate=3_000_000, tx=Pin(12), rx=Pin(13))
 print("Start")
 print("====================================")
 
-bno = BNO08X_UART(uart, debug=True)
-#bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=True)
+bno = BNO08X_UART(uart, debug=False)
+#bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=False)
 
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
+bno.enable_feature(BNO_REPORT_ACCELEROMETER, 125)
 
 # Enabled Report Periods:
 #   bno.enable_feature(BNO_REPORT_ACCELEROMETER, 50)

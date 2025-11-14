@@ -173,6 +173,9 @@ If you put a solder blob on both PS0 and PS1, this driver is likely to hang.
     bno = BNO08X_SPI(spi, cs, int_pin, reset_pin, wake_pin, debug=False)
 
 ## UART Setup
+UART wires are in some sense opposite of i2c wires (double check your wiring).
+ 1. BNO08x SDA to board UARTx-RX (gpio13)
+ 2. BNO08x SCL to board UARTx-TX (gbio12)
 
 PS0 and PS1 are the host interface protocol selection pins, therefore UART can not use wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground.
 
@@ -186,20 +189,20 @@ This is a very different protocol and not supported in my driver. Take a look at
 
 ## Report Maximum Frequencioes
 
-| **Feature**             | **Max Frequency (Hz)** | **msec/Report** |
-|-------------------------|------------------------|-----------------|
-| Composite Gyro Rotation | 1000                   | 1.0 ms          |
-| Accelerometer           | 500                    | 2.0 ms          |
-| Rotation Vector         | 400                    | 2.5 ms          |
-| Gaming Rotation         | 400                    | 2.5 ms          |
-| Gravity                 | 400                    | 2.5 ms          |
-| Linear Acceleration     | 400                    | 2.5 ms          |
-| Gyroscope               | 400                    | 2.5 ms          |
-| Magnetometer            | 100                    | 10.0 ms         |
-| Geomagnetic Rotation    | 90                     | 11.1 ms         |
-| (report default)        | 20                     | 50.0 ms         |
+| **Feature**             | **Max Frequency (Hz)** | **msec/Report** | **period we've seen** |
+|-------------------------|------------------------|-----------------|-----------------------|
+| Composite Gyro Rotation | 1000                   | 1.0 ms          | 1.0 ms                |
+| Accelerometer           | 500                    | 2.0 ms          | 4, 8, 16, 32, 64...   |
+| Rotation Vector         | 400                    | 2.5 ms          | 1.0 ms                |
+| Gaming Rotation         | 400                    | 2.5 ms          | 1.0 ms                |
+| Gravity                 | 400                    | 2.5 ms          | 1.0 ms                |
+| Linear Acceleration     | 400                    | 2.5 ms          | 1.0 ms                |
+| Gyroscope               | 400                    | 2.5 ms          | 1.0 ms                |
+| Magnetometer            | 100                    | 10.0 ms         | 1.0 ms                |
+| Geomagnetic Rotation    | 90                     | 11.1 ms         | 1.0 ms                |
+| (report default)        | 20                     | 50.0 ms         | 1.0 ms                |
 
-Report frequencies should be enabled before requesting reports
+Report frequencies should be enabled before requesting reports. To convert from period in ms to Hz (1000000/period.)
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 100)  # Enable accelerometer reports at 100 Hertz
 
