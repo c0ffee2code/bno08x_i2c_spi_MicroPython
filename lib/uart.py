@@ -24,7 +24,7 @@ In UART mode, the BNO08X sends an advertisement message when it is ready to comm
 
 from struct import pack_into
 
-from utime import sleep_ms
+from utime import sleep_ms, sleep_us
 
 # Assuming bno08x.py and Packet/PacketError definitions are available
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
@@ -44,6 +44,10 @@ class BNO08X_UART(BNO08X):
         super().__init__(reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
     def _send_packet(self, channel, data):
+        """
+        1.2.3.1 UART operation states:
+        "Bytes sent from the host to the BNO08X must be separated by at least 100us."
+        """
         data_length = len(data)
         write_length = data_length + 4
         byte_buffer = bytearray(1)
@@ -55,17 +59,17 @@ class BNO08X_UART(BNO08X):
         self._data_buffer[4: 4 + data_length] = data
 
         self._uart.write(b"\x7e")  # start byte
-        sleep_ms(1)
+        sleep_us(101) #was sleep_ms(1)
         self._uart.write(b"\x01")  # SHTP byte
-        sleep_ms(1)
+        sleep_us(101) #was sleep_ms(1)
 
         # writing byte-by-byte with a delay, standard UART prefers large write
         for b in self._data_buffer[0:write_length]:
             byte_buffer[0] = b
             self._uart.write(byte_buffer)
-            sleep_ms(1)
+            sleep_us(101) #was sleep_ms(1)
 
-        sleep_ms(1)
+        #sleep_us(101) #was sleep_ms(1)
         # end byte
         self._uart.write(b"\x7e")
 
