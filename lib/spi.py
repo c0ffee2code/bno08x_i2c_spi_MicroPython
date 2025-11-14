@@ -7,6 +7,9 @@
 """
 Subclass of `BNO08X` to use SPI
 
+BNO08x sensor use the non-defaul SPI. This driver reconfigures SPI to those settings.
+BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
+
 The BNO08x's SPI protocol has two main transactions:
 1) Host → BNO08x (Write Command): The host initiates the transfer to send a command or data.
 2) Host ← BNO08x (Read Data): The host initiates the transfer to read the BNO08x's data.
