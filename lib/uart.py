@@ -159,6 +159,7 @@ class BNO08X_UART(BNO08X):
         # TODO remove this after debug
         if channel >= len(self._rx_sequence_number):
             print(f"!!! WARNING: Received unexpected {channel=} {hex(channel)=}. Discarding packet.")
+            print(f"{self._data_buffer=}")
             # Read and discard the end byte to clear the buffer for the next packet
             self._uart.read(1) 
             # Use PacketError so the calling function can loop and try again
