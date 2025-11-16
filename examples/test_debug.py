@@ -22,7 +22,7 @@ print("====================================")
 bno = BNO08X_I2C(i2c0, address=0x4B, debug=False)
 #bno = BNO08X_I2C(i2c0, address=0x4B, reset_pin=reset_pin, int_pin=int_pin, debug=True)
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
+bno.enable_feature(BNO_REPORT_ACCELEROMETER, 125)
 
 # Enabled Report Periods:
 #   bno.enable_feature(BNO_REPORT_ACCELEROMETER, 50)

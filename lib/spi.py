@@ -84,10 +84,11 @@ class BNO08X_SPI(BNO08X):
     def _wait_for_int(self):
         """
         1.2.4.1: On the BNO085/BNO086, if the host fails to respond to the assertion of H_INTN within approximately 10 ms, the
-        BNO085/BNO086 will timeout, deassert H_INTN and retry the operation. Delays in responding to H_INTN cause
+        BNO085/BNO086 will time out, de-assert H_INTN and retry the operation. Delays in responding to H_INTN cause
         lost processing time on the BNO085/BNO086. Frequent delays will cause process starvation and some
         calculations will not be completed. The result is that some outputs will have errors. To avoid this problem H_INTN
         should be typically handled within 1/10 of the fastest sensor period.
+        Fastest sensor period is acceleration at 4ms
 
         """
         start_time = ticks_ms()
