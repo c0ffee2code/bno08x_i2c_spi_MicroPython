@@ -39,7 +39,7 @@ class BNO08X_I2C(BNO08X):
 
         pack_into("<H", self._data_buffer, 0, write_length)
         self._data_buffer[2] = channel
-        self._data_buffer[3] = self._rx_sequence_number[channel]
+        self._data_buffer[3] = self._tx_sequence_number[channel]
         for idx, send_byte in enumerate(data):
             self._data_buffer[4 + idx] = send_byte
         packet = Packet(self._data_buffer)
@@ -49,8 +49,8 @@ class BNO08X_I2C(BNO08X):
         self._i2c.writeto(self._bno_i2c_addr, self._data_buffer[:write_length])
 
         #todo is this right place for rx update? is this rx or tx?
-        self._rx_sequence_number[channel] = (self._rx_sequence_number[channel] + 1) % 256
-        return self._rx_sequence_number[channel]
+        self._tx_sequence_number[channel] = (self._tx_sequence_number[channel] + 1) % 256
+        return self._tx_sequence_number[channel]
 
     # returns true if available data was read
     # the sensor will always tell us how much there is, so no need to track it ourselves
@@ -71,15 +71,15 @@ class BNO08X_I2C(BNO08X):
 
         header = Packet.header_from_buffer(self._data_buffer)
         packet_byte_count = header.packet_byte_count
-        channel_number = header.channel_number
+        channel = header.channel_number
         sequence_number = header.sequence_number
 
-        self._rx_sequence_number[channel_number] = sequence_number
+        self._rx_sequence_number[channel] = sequence_number
         if packet_byte_count == 0:
             self._dbg("TODO Brad? SKIPPING NO PACKETS AVAILABLE IN i2c._read_packet")
             raise PacketError("No packet available")
         packet_byte_count -= 4
-        self._dbg(f"channel {channel_number} has {packet_byte_count} bytes available to read")
+        self._dbg(f"{channel=} has {packet_byte_count} bytes available to read")
 
         self._read(packet_byte_count)
 
