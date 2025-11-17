@@ -31,9 +31,9 @@ print("====================================")
 
 #bno = BNO08X_UART(uart, debug=False)
 #bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=True)
-bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=True)
+bno = BNO08X_UART(uart, reset_pin=reset_pin, int_pin=int_pin, debug=False)
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 125)
+bno.enable_feature(BNO_REPORT_ACCELEROMETER, 50)
 
 # bno.enable_feature(BNO_REPORT_MAGNETOMETER, 20)
 # bno.enable_feature(BNO_REPORT_GYROSCOPE, 20)

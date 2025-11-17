@@ -30,7 +30,6 @@ Implementation Notes
 
 TODO: updating sensor values more asychronously
 TODO: BRC test i2c with Reset & Interrupt pins (no wake?)
-TODO: BRC write & test UART (take wake wire off SPI)
 TODO: BRC I2c add quick fail and good error message if no i2c devices found
 TODO: BRC add protection to ensure only pin objects, not numbers are passed in (spi.py, i2c.py, and uart)
 TODO: BRC Euler/quaternion implementation
@@ -567,7 +566,7 @@ class BNO08X:
 
     """
 
-    def __init__(self, reset_pin=None, int_pin=None, cs_pin=None, wake_pin=None, debug=False) -> None:
+    def __init__(self, _interface, reset_pin=None, int_pin=None, cs_pin=None, wake_pin=None, debug=False) -> None:
 
         self._debug = debug
         self._reset_pin = reset_pin
@@ -582,10 +581,8 @@ class BNO08X:
         self._timestamp_us = 0
         self._rebase_us = 0
 
-        # TODO: seperate works for UART 
-        # TODO: check SPI and i2c to see how to update... like UART.
-        # track sequence numbers one per channel per direction
-        # the RX(inbound, last seen/expected) and TX(outbound) sequence numbers 
+        # track sequence numbers one per channel, one per direction
+        # RX(inbound, last seen/expected) and TX(outbound) sequence numbers 
         self._rx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
         self._tx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
 
@@ -601,7 +598,7 @@ class BNO08X:
         # dictionary of most recent values from each enabled sensor report
         self._report_values = {}
         self._report_periods_dictionary_us = {}
-        # Begin by resetting sensor
+
         self.reset_sensor()
         self._dbg("********** End __init__ *************\n")
 
@@ -612,9 +609,6 @@ class BNO08X:
         else:
             self.soft_reset()
             reset_type = "Soft"
-            
-# TODO BRC fix in hard reset for spi and i2c  
-#        self._tx_sequence_number = [0, 0, 0, 0, 0, 0] # Reset ALL TX sequences to 0
 
         for attempt in range(3):
             try:
@@ -833,7 +827,6 @@ class BNO08X:
         except KeyError:
             raise RuntimeError("raw magnetic report not enabled, use enable_feature") from None
 
-
     def begin_calibration(self) -> None:
         """Begin the sensor's self-calibration routine"""
         # start calibration for accel, gyro, and mag
@@ -929,7 +922,6 @@ class BNO08X:
                 processed_count += 1
                 self._dbg("")
                 self._dbg(f"Handle packet processed {processed_count} reports")
-
 
             # safety timeout if data ready stuck
             if ticks_diff(ticks_ms(), start_time) > 50:
@@ -1233,7 +1225,6 @@ class BNO08X:
             self._dbg(f"Report: {reports[report_id]}")
             self._dbg(f"data:{sensor_data}")
 
-
             return
 
         # General Case all other sensors, sensor_data is a 3-tuple
@@ -1241,8 +1232,7 @@ class BNO08X:
         self._dbg(f"Report: {reports[report_id]}")
         self._dbg(f"Data: {sensor_data}, {accuracy=}, {delay_us=}")
 
-
-            # TODO: BRC only magnetic accuracy can be user visible, but all reports have accuracy
+        # TODO: BRC only magnetic accuracy can be user visible, but all reports have accuracy
         if report_id == BNO_REPORT_MAGNETOMETER:
             self._magnetometer_accuracy = accuracy
 

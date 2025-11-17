@@ -38,9 +38,8 @@ In UART mode, the BNO08X sends an advertisement message when it is ready to comm
 
 from struct import pack_into
 
-from utime import sleep_ms, sleep_us, ticks_ms, ticks_diff
+from utime import sleep_ms, sleep_us, ticks_ms
 
-# Assuming bno08x.py and Packet/PacketError definitions are available
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE, _elapsed_sec
 
 
@@ -53,13 +52,15 @@ class BNO08X_UART(BNO08X):
         self._uart = uart
         self._reset = reset_pin
         self._int = int_pin
+        _interface = "UART"
 
         # wake_pin must be NONE!  wake_pin/PS0 = 0 (gnd)
-        super().__init__(reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
+        super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
     def _send_packet(self, channel, data):
         """
-        1.2.3.1 UART operation states: "Bytes sent from the host to the BNO08X must be separated by at least 100us."
+        1.2.3.1 UART operation states:
+        "Bytes sent from the host to the BNO08X must be separated by at least 100us."
         """
         data_length = len(data)
         write_length = data_length + 4
@@ -71,18 +72,17 @@ class BNO08X_UART(BNO08X):
         self._data_buffer[4: 4 + data_length] = data
 
         self._uart.write(b"\x7e")  # start byte
-        sleep_us(110)
+        sleep_us(100)
         self._uart.write(b"\x01")  # SHTP byte
-        sleep_us(110)
+        sleep_us(100)
 
-        # writing byte-by-byte with a delay, standard UART prefers large write
+        # writing byte-by-byte with the specified delay
         for b in self._data_buffer[0:write_length]:
             byte_buffer[0] = b
             self._uart.write(byte_buffer)
-            sleep_us(110)
+            sleep_us(100)
 
         self._uart.write(b"\x7e")  # end byte
-        # print("Sending", [hex(x) for x in self._data_buffer[0:write_length]])
 
         self._tx_sequence_number[channel] = (self._tx_sequence_number[channel] + 1) % 256
         return self._tx_sequence_number[channel]
@@ -103,9 +103,13 @@ class BNO08X_UART(BNO08X):
     def _read_header(self):
         """Reads the first 4 bytes available as a header"""
         data = None
+        start_time = ticks_ms()
         while True:
             data = self._uart.read(1)
             if not data:
+                if _elapsed_sec(start_time) > 5.0:
+                    print("ERROR 5 sec timeout, Check UART pins & sensor wiring (host TX to SCLK, host RX to SDA)")
+                    raise RuntimeError("UART read timeout while waiting for 0x7E start byte.")
                 continue
             b = data[0]
             if b == 0x7E:
@@ -122,8 +126,6 @@ class BNO08X_UART(BNO08X):
 
     def _read_packet(self, wait=None):
         self._read_header()
-        # print(f"rp _d_b: {self._data_buffer[:16]}")
-
         header = Packet.header_from_buffer(self._data_buffer)
         packet_byte_count = header.packet_byte_count
         channel = header.channel_number
@@ -150,22 +152,19 @@ class BNO08X_UART(BNO08X):
             raise RuntimeError("Timeout while waiting for packet end")
 
         b = data[0]
-        
+
         # Check for escape sequence
         if b == 0x7D:
             data = self._uart.read(1)
             if not data:
                 raise RuntimeError("Timeout while waiting for escaped end byte")
-            b = data[0] ^ 0x20 # Un-escape the byte
+            b = data[0] ^ 0x20  # Un-escape the byte
 
-        # Now, check if the resulting byte is the packet end marker (0x7E)
         if b != 0x7E:
             raise RuntimeError("Didn't find packet end")
 
         new_packet = Packet(self._data_buffer)
-        if self._debug:
-            print(new_packet)
-
+        self._dbg(f"{new_packet=}")
         self._update_sequence_number(new_packet)
 
         return new_packet
@@ -177,24 +176,58 @@ class BNO08X_UART(BNO08X):
 
     def soft_reset(self):
         """
-        UART has its own Soft reset, since it handles the SHTP command send & recieve packets here
-        to reset it sends 0x00 (in main class this is BNO_CHANNEL_SHTP_COMMAND)
+        UART has its own Soft reset,
+        Sends the 0x01 'reset' command over Channel 1 (Executable) 
+        to initiate a BNO08X firmware restart.
+        
+        Section 1.3.1 SHTP states: The executable channel (channel=1) allows the host to reset the BNO08X
+        and provide details of its operating mode. use write 1 – reset, read 1 - reset complete.
        """
-        print("Soft resetting...", end="")
+        self._dbg("*** Soft Reset in UART , using Channel 1 command, starting...")
 
-        data = bytearray([0, 1])
-        self._send_packet(0x00, data)
+        # Payload: 0x01 (the 'reset' command)
+        reset_payload = bytearray([0x01])
+        # Send the packet on Channel 1 (BNO_CHANNEL_EXE = const(1) - 0x01)
+        self._send_packet(0x01, reset_payload)
+
+        # flush any uart data leftover from the previous run before the reset
+        while self._uart.any():
+            self._uart.read(self._uart.any())
+        self._dbg("*** Cleared stale UART buffer during reset")
         sleep_ms(500)
 
-        # read the SHTP announce command packet response
-        while True:
-            packet = self._read_packet()
-            if packet.channel_number == 0x00:
+        start_time = ticks_ms()
+        self._dbg("Process initial packets, until get Product ID report (0xf8)...")
+
+        # Loop for a short period to process reports (like Timestamp or Command Response)
+        while _elapsed_sec(start_time) < 1.0:
+            try:
+                # Check for enough bytes for a header (4) to prevent blocking indefinitely
+                if not self._data_ready:
+                    sleep_ms(10)
+                    continue
+
+                packet = self._read_packet()
+                self._handle_packet(packet)
+                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.sequence_number}).")
+
+            except (RuntimeError, PacketError):
+                # expected end-of-burst condition (timeout, no more data)
                 break
 
-        # reset TX sequence numbers in base class
+            except KeyError as e:
+                self._dbg(f"exit Soft Teset: minor KeyError caught, likely stream end/data access, Error:{e})")
+                break
+
+            except Exception as e:
+                self._dbg(f"FATAL UNEXPECTED ERROR during boot processing: (Type: {type(e)}): {e}. Exiting.")
+                raise  # Re-raise when unexpected and fatal
+
+        # Reset tx and rx sequence numbers, BNO08X initially sets sequence numbers to 0 after boot.
+        self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
+        self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
+
         self._dbg("End Soft RESET in uart.py")
-        
 
     def hard_reset(self) -> None:
         """
@@ -204,45 +237,50 @@ class BNO08X_UART(BNO08X):
         if not self._reset_pin:
             return
 
-        self._dbg("*** Hard Reset in UART start...")
+        self._dbg("*** Hard Reset in UART, starting...")
         self._reset_pin.value(1)
         sleep_ms(10)
         self._reset_pin.value(0)
-        sleep_us(1)  # TODO try sleep_us(1), data sheet 6.5.3 Startup timing says only 10ns needed
+        sleep_us(1)  # data sheet 6.5.3 Startup timing says only 10ns needed
         self._reset_pin.value(1)
+
+        # flush any uart data leftover from the previous run before the reset
+        while self._uart.any():
+            self._uart.read(self._uart.any())
+        self._dbg("*** Cleared stale UART buffer during reset")
+
         sleep_ms(120)  # data sheet 6.5.3 Startup timing implies 94 ms needed
 
         start_time = ticks_ms()
         self._dbg("Process initial packets, until get Product ID report (0xf8)...")
-        
+
         # Loop for a short period to process reports (like Timestamp or Command Response)
-        while _elapsed_sec(start_time) < 1.0: 
+        while _elapsed_sec(start_time) < 1.0:
             try:
                 # Check for enough bytes for a header (4) to prevent blocking indefinitely
                 if not self._data_ready:
                     sleep_ms(10)
                     continue
 
-                packet = self._read_packet() 
+                packet = self._read_packet()
                 self._handle_packet(packet)
                 self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.sequence_number}).")
 
             except (RuntimeError, PacketError):
                 # expected end-of-burst condition (timeout, no more data)
                 break
-            
+
             except KeyError as e:
                 self._dbg(f"exit hard reset: minor KeyError caught, likely stream end/data access, Error:{e})")
-                break 
+                break
 
             except Exception as e:
                 self._dbg(f"FATAL UNEXPECTED ERROR during boot processing: (Type: {type(e)}): {e}. Exiting.")
-                raise # Re-raise when unexpected and fatal
-
+                raise  # Re-raise when unexpected and fatal
 
         # Reset tx and rx sequence numbers, BNO08X initially sets sequence numbers to 0 after boot.
         self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
         self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
-        
+
         self._dbg("*** Hard Reset acknowledged in uart.py, sequence numbers reset")
         # Control returns to bno08x.py:reset_sensor which calls _check_id()
