@@ -354,31 +354,32 @@ def _elapsed_sec(start_time):
 
 ############ REPORT PARSING ###########################
 def _parse_sensor_report_data(report_bytes: bytearray) -> tuple[tuple, int]:
-    """Parses reports with only 16-bit fields"""
-    data_offset = 4  # this may not always be true
+    """
+    Parses reports with only 16-bit fields('h'), sensor data starts at offset=4
+    parses standard 3-tuple vectors and 4-tuple quaternions
+    """
     report_id = report_bytes[0]
     scalar, count, _report_length = _AVAIL_SENSOR_REPORTS[report_id]
-    results = []
 
-    format_str = "<H" if report_id in _RAW_REPORTS else "<h"
-
-    byte2 = unpack_from("<B", report_bytes, 2)[0]
-    byte3 = unpack_from("<B", report_bytes, 3)[0]
+    byte2 = report_bytes[2]
+    byte3 = report_bytes[3]
     accuracy = byte2 & 0x03
 
-    # Extract delay upper 6 bits (bits 7:2), combine and adjust from 100us units
+    # Extract delay 
     delay_upper = (byte2 >> 2) & 0x3F
     delay_raw = (delay_upper << 8) | byte3
     delay_us = delay_raw * 100
 
-    for _offset_idx in range(count):
-        total_offset = data_offset + (_offset_idx * 2)
-        raw_data = unpack_from(format_str, report_bytes, total_offset)[0]
-        scaled_data = raw_data * scalar
-        results.append(scaled_data)
-    results_tuple = tuple(results)
+    if count == 3:
+        x, y, z = unpack_from('<hhh', report_bytes, 4)
+        scaled_data = (x * scalar, y * scalar, z * scalar)
+    elif count == 4:
+        i, j, k, r = unpack_from('<hhhh', report_bytes, 4)
+        scaled_data = (i * scalar, j * scalar, k * scalar, r * scalar)
+    else:
+        raise ValueError(f"Unexpected data field count ({count}) for report ID {hex(report_id)}")
 
-    return results_tuple, accuracy, delay_us
+    return scaled_data, accuracy, delay_us
 
 
 def _report_length(report_id: int) -> int:
@@ -562,6 +563,12 @@ class Packet:
 class BNO08X:
     """Library for the BNO08x IMUs from Hillcrest Laboratories
 
+        Main flow:
+        * _process_available_packets
+        * _handle_packet
+        * _process_report
+        * _parse_sensor_report_data
+
     :param
 
     """
@@ -601,6 +608,7 @@ class BNO08X:
 
         self.reset_sensor()
         self._dbg("********** End __init__ *************\n")
+        self._dbg(f"Interface is {_interface}\n")
 
     def reset_sensor(self):
         if self._reset_pin:
@@ -1117,14 +1125,6 @@ class BNO08X:
             self._handle_control_report(report_id, report_bytes)
             return
 
-        # if self._debug:
-        #     lines = []
-        #     for i in range(0, len(report_bytes), 4):
-        #         chunk = " ".join(f"0x{b:02X}" for b in report_bytes[i:i + 4])
-        #         lines.append(f"DBG::\t\t[0x{i:02X}] {chunk}")
-        #     self._dbg("\n".join(lines))
-        #     self._dbg("")
-
         if report_id == BNO_REPORT_STEP_COUNTER:
             self._report_values[report_id] = unpack_from("<H", report_bytes, 8)[0]
             return
@@ -1165,28 +1165,12 @@ class BNO08X:
         # Raw Magnetometer: returns 4-tuple: x, y, z, and time_stamp
         # Raw accelerometer: returns 4-tuple: x, y, z, and time_stamp
         # time_stamp units in microseconds
-        if report_id == BNO_REPORT_RAW_ACCELEROMETER or report_id == BNO_REPORT_RAW_MAGNETOMETER:
-            data_offset = 4
-            report_id = report_bytes[0]
-            scalar, count, _report_length = _AVAIL_SENSOR_REPORTS[report_id]
-
-            results = []
-            # get 3 raw accelerometer x,y,z 16-bit values
-            for _offset_idx in range(count):
-                total_offset = data_offset + (_offset_idx * 2)
-                raw_data = unpack_from("<H", report_bytes, total_offset)[0]
-                results.append(raw_data)
-
-            # get 32-bit time_stamp from raw accelerometer, time_stamp units in microseconds
+        if report_id in (BNO_REPORT_RAW_ACCELEROMETER, BNO_REPORT_RAW_MAGNETOMETER):
+            x, y, z = unpack_from("<HHH", report_bytes, 4)
             time_stamp = unpack_from("<I", report_bytes, 12)[0]
-            results.append(time_stamp)
 
-            sensor_data = tuple(results)
-            if self._debug:
-                outstr = "\t\t\t\tReading for %s %s Time_stamp %u" % (_REPORTS_DICTIONARY[report_id], str(sensor_data),
-                                                                      time_stamp)
-                print(outstr)
-
+            # You can combine results into a tuple efficiently:
+            sensor_data = (x, y, z, time_stamp)
             self._report_values[report_id] = sensor_data
             return
 
@@ -1194,37 +1178,11 @@ class BNO08X:
         # time_stamp units in microseconds
         # Celsius float units in celsius
         if report_id == BNO_REPORT_RAW_GYROSCOPE:
-            data_offset = 4
-            report_id = report_bytes[0]
-            scalar, count, _report_length = _AVAIL_SENSOR_REPORTS[report_id]
-
-            results = []
-            # get 3 raw gyroscope x,y,z 16-bit values
-            for _offset_idx in range(count):
-                total_offset = data_offset + (_offset_idx * 2)
-                raw_data = unpack_from("<H", report_bytes, total_offset)[0]
-                results.append(raw_data)
-
-            # get temperature from raw gyroscope
-            # Cera support: temp_int is signed 16-bit int, 0.5C/LSB, center offset is 23°C
-            temp_int = unpack_from("<h", report_bytes, 10)[0]
+            # Unpack from offset 4: 3xH (x,y,z), 1xh (temp_int), 1xI (time_stamp)
+            raw_x, raw_y, raw_z, temp_int, time_stamp = unpack_from("<HHHhI", report_bytes, 4)
             celsius = (temp_int / 2.0) + 23.0
-            results.append(celsius)
-
-            # get 32-bit time_stamp from raw gyroscope, time_stamp units in microseconds
-            time_stamp = unpack_from("<I", report_bytes, 12)[0]
-            results.append(time_stamp)
-
-            sensor_data = tuple(results)
-            if self._debug:
-                outstr = "\t\t\t\tReading for %s %s Time_stamp %u" % (_REPORTS_DICTIONARY[report_id], str(sensor_data),
-                                                                      time_stamp)
-                print(outstr)
-
+            sensor_data = (raw_x, raw_y, raw_z, celsius, time_stamp)
             self._report_values[report_id] = sensor_data
-            self._dbg(f"Report: {reports[report_id]}")
-            self._dbg(f"data:{sensor_data}")
-
             return
 
         # General Case all other sensors, sensor_data is a 3-tuple
