@@ -917,13 +917,13 @@ class BNO08X:
             if new_packet:
                 self._handle_packet(new_packet)
                 processed_count += 1
-                self._dbg("")
-                self._dbg(f"Handle packet processed {processed_count} reports")
+                self._dbg(f"\nHandle packet processed {processed_count} reports")
 
             # safety timeout if data ready stuck
             if ticks_diff(ticks_ms(), start_time) > 50:
                 self._dbg("Timeout in _process_available_packets")
                 break
+
         flag = processed_count > 0
         self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
         return flag
@@ -978,27 +978,64 @@ class BNO08X:
         raise RuntimeError(
             f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s")
 
-    # update the cached sequence number so we know what to increment from
-    # TODO: this is wrong there should be one per channel per direction
-    # and apparently per report as well
     def _update_sequence_number(self, new_packet: Packet) -> None:
         channel = new_packet.channel_number
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq
 
-    # Dobodu addressed: https://github.com/adafruit/Adafruit_CircuitPython_BNO08x/issues/49
-    # Dobodu debugged CircuitPython's issue with  RuntimeError: ('Unprocessable Batch bytes', 2)
+    #     def _handle_packet(self, packet):
+    #         """
+    #         Split a single packet into multiple reports and process them in FIFO order.
+    #         Handles multiple 0xF8 Product ID Response reports correctly.
+    #         """
+    #         try:
+    #             next_byte_index = 0
+    #             slices = []
+    #
+    #             while next_byte_index < packet.header.data_length:
+    #                 report_id = packet.data[next_byte_index]
+    #                 if report_id < 0xF0:
+    #                     required_bytes = _AVAIL_SENSOR_REPORTS[report_id][2]
+    #                 else:
+    #                     required_bytes = _REPORT_LENGTHS.get(report_id, 0)
+    #                     if required_bytes == 0:
+    #                         self._dbg(f"Unknown report_id {hex(report_id)}, skipping 1 byte")
+    #                         next_byte_index += 1
+    #                         continue
+    #
+    #                 unprocessed_byte_count = packet.header.data_length - next_byte_index
+    #                 if unprocessed_byte_count < required_bytes:
+    #                     self._dbg(f"Unprocessable batch ERROR: skipping ! {unprocessed_byte_count} bytes")
+    #                     break
+    #
+    #                 report_slice = packet.data[next_byte_index: next_byte_index + required_bytes]
+    #                 slices.append([report_slice[0], report_slice])
+    #                 next_byte_index += required_bytes
+    #
+    #             self._dbg(f"HANDLING {len(slices)} PACKET{'S' if len(slices) > 1 else ''}...")
+    #             # Process in FIFO order
+    #             for report_id, report_bytes in slices:
+    #                 self._dbg("")
+    #                 self._process_report(report_id, report_bytes)
+    #
+    #         except Exception as error:
+    #             self._dbg(f"Handle Packet: Packet bytes:{[hex(b) for b in packet.data[:4]]}...")
+    #             raise
     def _handle_packet(self, packet):
         """
         Split a single packet into multiple reports and process them in FIFO order.
         Handles multiple 0xF8 Product ID Response reports correctly.
         """
+        # Use memoryview of the packet data once at the start, if it's not already one.
+        data_view = memoryview(packet.data)
+
         try:
             next_byte_index = 0
-            slices = []
+            slices = []  # Now holds (report_id, memoryview_slice) tuples
 
             while next_byte_index < packet.header.data_length:
                 report_id = packet.data[next_byte_index]
+
                 if report_id < 0xF0:
                     required_bytes = _AVAIL_SENSOR_REPORTS[report_id][2]
                 else:
@@ -1013,14 +1050,18 @@ class BNO08X:
                     self._dbg(f"Unprocessable batch ERROR: skipping ! {unprocessed_byte_count} bytes")
                     break
 
-                report_slice = packet.data[next_byte_index: next_byte_index + required_bytes]
-                slices.append([report_slice[0], report_slice])
+                # CRITICAL CHANGE: Create a memoryview slice (no data copy)
+                report_view = data_view[next_byte_index: next_byte_index + required_bytes]
+
+                # Append (report_id, memoryview_slice)
+                slices.append([report_view[0], report_view])
                 next_byte_index += required_bytes
 
             self._dbg(f"HANDLING {len(slices)} PACKET{'S' if len(slices) > 1 else ''}...")
             # Process in FIFO order
             for report_id, report_bytes in slices:
                 self._dbg("")
+                # report_bytes is now a memoryview, which is compatible with unpack_from
                 self._process_report(report_id, report_bytes)
 
         except Exception as error:
@@ -1029,7 +1070,7 @@ class BNO08X:
 
     def _handle_control_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
-        Handle control reports. Timestamps first return quickly
+        Handle control reports. Timestamp is first to return quickly
         :param report_id: report ID
         :param report_bytes: portion of packet for report
         :return:
@@ -1046,6 +1087,18 @@ class BNO08X:
             self._dbg(f"Timestamp Rebase (0xfa): {self._rebase_us} usec")
             return
 
+        # Feature response (0xfc)
+        if report_id == _GET_FEATURE_RESPONSE:
+            get_feature_report = _parse_get_feature_response_report(report_bytes)
+            _report_id, feature_report_id, *_remainder = get_feature_report
+            self._report_values[feature_report_id] = _INITIAL_REPORTS.get(feature_report_id, (0.0, 0.0, 0.0))
+            return
+
+        # Command Response (0xF1)
+        if report_id == _COMMAND_RESPONSE:
+            self._handle_command_response(report_bytes)
+            return
+
         # Product ID Response (0xf8)
         if report_id == _SHTP_REPORT_PRODUCT_ID_RESPONSE:
             (reset_cause, sw_part_number, sw_major, sw_minor, sw_patch, sw_build_number,) = _parse_sensor_id(
@@ -1056,20 +1109,6 @@ class BNO08X:
             self._dbg(f"*** Software Version: {sw_major}.{sw_minor}.{sw_patch}")
             self._dbg(f"\tBuild: {sw_build_number}")
             self._id_read = True
-            return
-
-        # Feature response (0xfc)
-        # feature_report_id, feature_flags, change_sensitivity, report_interval
-        # batch_interval_word, sensor_specific_configuration_word
-        if report_id == _GET_FEATURE_RESPONSE:
-            get_feature_report = _parse_get_feature_response_report(report_bytes)
-            _report_id, feature_report_id, *_remainder = get_feature_report
-            self._report_values[feature_report_id] = _INITIAL_REPORTS.get(feature_report_id, (0.0, 0.0, 0.0))
-            return
-
-        # Command Response (0xF1)
-        if report_id == _COMMAND_RESPONSE:
-            self._handle_command_response(report_bytes)
             return
 
         self._dbg(f"Received unexpected control report ID: {hex(report_id)}")
@@ -1103,13 +1142,25 @@ class BNO08X:
     def _process_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
         Process reports both sensor and control reports
-        Extracted accuracy and delay from each report (100usec ticks)
         TODO: BRC determine how to expose accuracy and delay to users
+        TODO: BRC handle ARVR 5 tuple at end
         
+        Extracted accuracy and delay from each report (100usec ticks)
         Multiple reports are processed in the order they appear in the packet buffer.
         Last sensor report's value over-write previous in this packet.
         The first (oldest) report sets self._report_values[report_id],
         """
+        if 0x01 <= report_id <= 0x09:
+            sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
+            self._dbg(f"Report: {reports[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
+
+            if report_id == BNO_REPORT_MAGNETOMETER:
+                # TODO: BRC only magnetic accuracy can be user visible, but all reports have accuracy
+                self._magnetometer_accuracy = accuracy
+
+            self._report_values[report_id] = sensor_data
+            return
+
         if report_id >= 0xF0:
             self._handle_control_report(report_id, report_bytes)
             return
@@ -1123,7 +1174,7 @@ class BNO08X:
             shake_bitfield = unpack_from("<H", report_bytes, 4)[0]
             shake_detected = (shake_bitfield & 0x07) != 0
 
-            # Latch shake in _readings
+            # Latch shake in _readings 
             if shake_detected:
                 previous = self._report_values.get(BNO_REPORT_SHAKE_DETECTOR, False)
                 self._report_values[BNO_REPORT_SHAKE_DETECTOR] = True
@@ -1157,8 +1208,6 @@ class BNO08X:
         if report_id in (BNO_REPORT_RAW_ACCELEROMETER, BNO_REPORT_RAW_MAGNETOMETER):
             x, y, z = unpack_from("<HHH", report_bytes, 4)
             time_stamp = unpack_from("<I", report_bytes, 12)[0]
-
-            # You can combine results into a tuple efficiently:
             sensor_data = (x, y, z, time_stamp)
             self._report_values[report_id] = sensor_data
             return
@@ -1167,20 +1216,20 @@ class BNO08X:
         # time_stamp units in microseconds
         # Celsius float units in celsius
         if report_id == BNO_REPORT_RAW_GYROSCOPE:
-            # Unpack from offset 4: 3xH (x,y,z), 1xh (temp_int), 1xI (time_stamp)
             raw_x, raw_y, raw_z, temp_int, time_stamp = unpack_from("<HHHhI", report_bytes, 4)
             celsius = (temp_int / 2.0) + 23.0
             sensor_data = (raw_x, raw_y, raw_z, celsius, time_stamp)
             self._report_values[report_id] = sensor_data
             return
 
-        # General Case all other sensors, sensor_data is a 3-tuple
+        # General Case all other sensors, but the only two left are AVAR, is this  right TODO BRC??
+        # sensor_data is a 3-tuple or 4-tuple, 
+        # TODO fix for ARVR 5-tuple for  ARVR-Stabilized Rotation Vector (0x28)
         sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
-        self._dbg(f"Report: {reports[report_id]}")
-        self._dbg(f"Data: {sensor_data}, {accuracy=}, {delay_us=}")
+        self._dbg(f"Report: {reports[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
 
-        # TODO: BRC only magnetic accuracy can be user visible, but all reports have accuracy
         if report_id == BNO_REPORT_MAGNETOMETER:
+            # TODO: BRC only magnetic accuracy can be user visible, but all reports have accuracy
             self._magnetometer_accuracy = accuracy
 
         self._report_values[report_id] = sensor_data
