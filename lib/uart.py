@@ -183,6 +183,49 @@ class BNO08X_UART(BNO08X):
         # reset TX sequence numbers
         self._tx_sequence_number = [0, 0, 0, 0, 0, 0]  # Reset ALL TX sequences to 0
         self._dbg("End Soft RESET in uart.py")
+        
+# TODO LIKELY REWRITE
+# BNO_CHANNEL_EXE = const(1)
+# 
+#     def soft_reset(self) -> None:
+#         """Reset the sensor to an initial unconfigured state and wait for ready advertisement."""
+#         self._dbg("Start SOFT RESET...")
+# 
+#         # 1. Send the single-byte Host Reset command (value 1) on Channel 1 (BNO_CHANNEL_EXE)
+#         reset_command_data = bytearray([1])
+#         self._send_packet(BNO_CHANNEL_EXE, reset_command_data)
+# 
+#         # Allow time for the BNO08X to process the reset and reboot
+#         sleep_ms(500) 
+# 
+#         # 2. Read packets until the Channel 0 (Advertisement) packet is found
+#         while True:
+#             try:
+#                 packet = self._read_packet()
+#             except PacketError as e:
+#                 self._dbg(f"Error during soft reset read, clearing buffer and retrying: {e}")
+#                 self._uart.read(self._uart.any()) # Clear any remaining junk data
+#                 sleep_ms(200)
+#                 continue # Try reading again
+#             
+#             # Expected response flow:
+#             if packet.channel_number == BNO_CHANNEL_EXE: # Channel 1 (Reset Complete)
+#                 self._dbg("Found Channel 1: Reset Complete. Continuing to wait for Channel 0.")
+#                 # The reset is confirmed, continue reading the next packet
+#                 
+#             elif packet.channel_number == 0x00: # Channel 0 (Advertisement)
+#                 self._dbg("Found Channel 0: SHTP Advertisement. Soft Reset complete.")
+#                 # Reset TX sequence numbers after the device reboots
+#                 self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
+#                 return # Exit successfully
+#                 
+#             else:
+#                 self._dbg(f"Ignoring unexpected channel: 0x{packet.channel_number:x}")
+# 
+#         # Note: A final timeout mechanism should be added around the while loop
+#         # for maximum robustness, but for typical operation, the above should suffice.
+        
+        
 
     def hard_reset(self) -> None:
         """
@@ -196,9 +239,9 @@ class BNO08X_UART(BNO08X):
         self._reset_pin.value(1)
         sleep_ms(10)
         self._reset_pin.value(0)
-        sleep_ms(10)  # TODO try sleep_us(1), data sheet say only 10ns required,
+        sleep_us(1)  # TODO try sleep_us(1), data sheet 6.5.3 Startup timing says only 10ns needed
         self._reset_pin.value(1)
-        sleep_ms(500)  # datasheet implies 94 ms needed, 200ms has sporatic errors, increasing to 500
+        sleep_ms(120)  # data sheet 6.5.3 Startup timing implies 94 ms needed
 
         # read the SHTP announce command packet response
         while True:
