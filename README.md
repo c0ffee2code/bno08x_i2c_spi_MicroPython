@@ -174,9 +174,12 @@ If you put a solder blob on both PS0 and PS1, this driver is likely to hang.
 
 ## UART Setup
 UART wires are in some sense opposite of i2c wires (double check your wiring).
- 1. BNO08x SDA to board UARTx-RX (gpio13)
- 2. BNO08x SCL to board UARTx-TX (gbio12)
-3. INT Pin is required for accurate communication
+uart = UART(1, baudrate=3_000_000, tx=Pin(8), rx=Pin(9), timeout=2000)
+uart = UART(0, baudrate=3_000_000, tx=Pin(12), rx=Pin(13), timeout=2000)
+
+ 1. BNO08x SDA to board UARTx-RX (uart 1 ex: gpio9, uart 0 ex: gpio13)
+ 2. BNO08x SCL to board UARTx-TX (uart 1 ex: gbio8, uart 0 ex: gpio12)
+3. todo ? INT Pin is required for accurate communication
 
 PS0 and PS1 are the host interface protocol selection pins, therefore UART can not use wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground.
 
