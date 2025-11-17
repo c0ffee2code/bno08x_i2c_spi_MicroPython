@@ -408,7 +408,7 @@ def _parse_timestamp(buffer: bytearray) -> tuple[int, ...]:
 def _parse_sensor_id(buffer: bytearray) -> tuple[int, ...]:
     """Parse the fields of a product id report"""
     if not buffer[0] == _SHTP_REPORT_PRODUCT_ID_RESPONSE:
-        raise AttributeError("Wrong report id for sensor id: %s" % hex(buffer[0]))
+        raise AttributeError(f"Wrong report id for sensor id: {hex(buffer[0])}")
 
     reset_cause = unpack_from("<B", buffer, 1)[0]
     sw_major = unpack_from("<B", buffer, 2)[0]
@@ -442,10 +442,7 @@ def _insert_command_request_report(
         command_params=None,
 ) -> None:
     if command_params and len(command_params) > 9:
-        raise AttributeError(
-            "Command request reports can only have up to 9 arguments but %d were given"
-            % len(command_params)
-        )
+        raise AttributeError(f"Command request report max 9 arguments: {len(command_params)} given")
     buffer[0] = _COMMAND_REQUEST
     buffer[1] = next_sequence_number
     buffer[2] = command
@@ -491,29 +488,21 @@ class Packet:
         length = self.header.packet_byte_count
         outstr = "\n\t\t********** Packet *************\n"
         outstr += "DBG::\t\tHeader:\n"
-        outstr += "DBG::\t\t Data Len: %d\n" % self.header.data_length
-        outstr += "DBG::\t\t Channel: %s (%d)\n" % (
-            channels[self.channel_number],
-            self.channel_number,
-        )
+        outstr += f"DBG::\t\t Data Len: {self.header.data_length}\n"
+        outstr += f"DBG::\t\t Channel: {channels[self.channel_number]} ({self.channel_number})\n"
         if self.channel_number in {
             _BNO_CHANNEL_CONTROL,
             _BNO_CHANNEL_INPUT_SENSOR_REPORTS,
         }:
             if self.report_id in reports:
-                outstr += "DBG::\t\t Report Type: %s (0x%x)\n" % (
-                    reports[self.report_id],
-                    self.report_id,
-                )
+                outstr += f"DBG::\t\t Report Type: {reports[self.report_id]} ({hex(self.report_id)})\n"
+
             else:
-                outstr += "DBG::\t\t \t** UNKNOWN Report Type **: %s\n" % hex(self.report_id)
+                outstr += f"DBG::\t\t \t** UNKNOWN Report Type **: {hex(self.report_id)}\n"
 
             if self.report_id == 0xFC and len(self.data) >= 6 and self.data[1] in reports:
-                outstr += "DBG::\t\t Enabled Feature: %s(%s)\n" % (
-                    reports[self.data[1]],
-                    hex(self.data[1]),
-                )
-        outstr += "DBG::\t\t Sequence number: %s\n" % self.header.sequence_number
+                outstr += f"DBG::\t\t Enabled Feature: {reports[self.data[1]]} ({hex(self.data[1])})\n"
+                outstr += f"DBG::\t\t Sequence number: {self.header.sequence_number}\n"
         outstr += "\n"
         outstr += "DBG::\t\tData:"
 
@@ -1021,7 +1010,7 @@ class BNO08X:
 
                 unprocessed_byte_count = packet.header.data_length - next_byte_index
                 if unprocessed_byte_count < required_bytes:
-                    self._dbg("Unprocessable batch ERROR: skipping !", unprocessed_byte_count, "bytes")
+                    self._dbg(f"Unprocessable batch ERROR: skipping ! {unprocessed_byte_count} bytes")
                     break
 
                 report_slice = packet.data[next_byte_index: next_byte_index + required_bytes]
@@ -1040,7 +1029,7 @@ class BNO08X:
 
     def _handle_control_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
-        Handle control reports. %imestamps first return quickly
+        Handle control reports. Timestamps first return quickly
         :param report_id: report ID
         :param report_bytes: portion of packet for report
         :return:
@@ -1227,7 +1216,7 @@ class BNO08X:
 
         feature_dependency = _RAW_REPORTS.get(feature_id, None)
         if feature_dependency and feature_dependency not in self._report_values:
-            self._dbg(" Feature dependency:", feature_dependency)
+            self._dbg(f" Feature dependency: {feature_dependency}")
             self.enable_feature(feature_dependency, AVAIL_REPORT_FREQ[feature_dependency])
 
         # UART operation reqires wake_pin is None
