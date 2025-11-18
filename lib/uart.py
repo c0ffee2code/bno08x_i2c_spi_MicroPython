@@ -164,7 +164,6 @@ class BNO08X_UART(BNO08X):
             raise RuntimeError("Didn't find packet end")
 
         new_packet = Packet(self._data_buffer)
-        self._dbg(f"{new_packet=}")
         self._update_sequence_number(new_packet)
 
         return new_packet
@@ -209,7 +208,7 @@ class BNO08X_UART(BNO08X):
 
                 packet = self._read_packet()
                 self._handle_packet(packet)
-                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.sequence_number}).")
+                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.header.sequence_number}).")
 
             except (RuntimeError, PacketError):
                 # expected end-of-burst condition (timeout, no more data)
@@ -264,7 +263,7 @@ class BNO08X_UART(BNO08X):
 
                 packet = self._read_packet()
                 self._handle_packet(packet)
-                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.sequence_number}).")
+                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.header.sequence_number}).")
 
             except (RuntimeError, PacketError):
                 # expected end-of-burst condition (timeout, no more data)
