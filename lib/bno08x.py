@@ -932,6 +932,7 @@ class BNO08X:
             except PacketError:
                 # transient read errors should not block
                 # small delay prevents hammering SPI if line is unstable
+                # TODO sleep_ms(2) too long
                 sleep_ms(2)
                 continue
 
@@ -941,7 +942,8 @@ class BNO08X:
                 self._dbg(f"\nHandle packet processed {processed_count} reports")
 
             # safety timeout if data ready stuck
-            if ticks_diff(ticks_ms(), start_time) > 50:
+            # TODO 50 way too long
+            if ticks_diff(ticks_ms(), start_time) > 3:
                 self._dbg("Timeout in _process_available_packets")
                 break
 
