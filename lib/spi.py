@@ -242,10 +242,12 @@ class BNO08X_SPI(BNO08X):
         self._rx_sequence_number[channel] = (self._rx_sequence_number[channel] + 1) % 256
         return self._rx_sequence_number[channel]
 
+    # TODO add to I2C and UART
     @property
     def _data_ready(self):
-        try:
-            return self._int.value() == 0
-        except AttributeError:
-            # Handle case where _int is None or hasn't been initialized
-            return False
+        """
+        Returns True if at least one new interrupt seen based on timestamps
+        """
+        if self.last_interrupt_us != self.prev_interrupt_us:
+            return True
+        return False
