@@ -14,22 +14,20 @@ The BNO08x's SPI protocol has two main transactions:
 1) Host → BNO08x (Write Command): The host initiates the transfer to send a command or data.
 2) Host ← BNO08x (Read Data): The host initiates the transfer to read the BNO08x's data.
 
-The INT pin is primarily used to tell the host when the BNO08x has data ready (for a Read).
+The INT pin is used to tell the host when the BNO08x has data ready (for a Read).
 Requiring an active-low INT signal before the host sends a command (a Write) is overly strict.
 The BNO08x documentation indicates that for a host-to-BNO write, the host is usually free to
 initiate the transfer.
 
-todo: UART and i2c track rx sequence numbers but not spi, why?
 TODO: The BNO08x datasheet says the host must respond to H_INTN assertion within ≈10ms
 to avoid starvation. While the 3.0s timeout prevents lockup, the sleep_ms(10) in
 the loop means the driver will frequently miss the 10ms deadline when polling.
-For high report rates, should a hardware interrupt on the Pico's INT pin?
-(machine.Pin.irq()) on the INT pin.
-On falling edge interrups, set a flag (ex: self._int_data_ready = True)?
+
 """
 from struct import pack_into
 
 from utime import ticks_ms, sleep_ms, sleep_us
+from machine import Pin
 
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE, _elapsed_sec
 
@@ -53,17 +51,31 @@ class BNO08X_SPI(BNO08X):
         self._spi.init(baudrate=baudrate, polarity=1, phase=1)
         _interface = "SPI"
 
-        self._reset = reset_pin
+        if cs_pin is None:
+            raise RuntimeError("cs_pin is required for SPI operation")
+
+        if not isinstance(cs_pin, Pin):
+            raise TypeError("cs_pin must be a Pin object, not Pin number")
+
+        self._cs = cs_pin
+        self._cs.value(1) # ensure CS is de-asserted by default
+        
+        if int_pin is None:
+            raise RuntimeError("int_pin is required for SPI operation")
+
+        if not isinstance(int_pin, Pin):
+            raise TypeError("int_pin must be a Pin object, not Pin number")
+        
+        if wake_pin is None:
+            raise RuntimeError("wake_pin is required for SPI operation")
+
+        if not isinstance(wake_pin, Pin):
+            raise TypeError("wake_pin must be a Pin object, not Pin number")
+        
         self._int = int_pin
         self._wake = wake_pin
-        if self._wake:
-            self._wake.value(1)
-
-        self._cs = cs_pin  # ensure CS is de-asserted by default
-        try:
-            self._cs.value(1)
-        except AttributeError:
-            pass
+        self._wake.value(1)
+        self._reset = reset_pin
 
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin, debug=debug)
 
@@ -94,6 +106,8 @@ class BNO08X_SPI(BNO08X):
         """
         start_time = ticks_ms()
 
+        # SPI operation Requires wake_pin
+        # I2C & UARToperation reqires NO wake_pin (None)
         if self._wake is not None and self._wake.value() == 1:
             self._dbg("WAKE Pulse to ensure BNO08x is out of sleep before INT.")
             self._wake.value(0)
