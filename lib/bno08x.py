@@ -542,6 +542,103 @@ class Packet:
         return False
 
 
+class SensorReading3:
+    """3-element reading with optional metadata."""
+    __slots__ = ("v1", "v2", "v3", "accuracy", "timestamp_us")
+
+    def __init__(self, v1, v2, v3, accuracy, timestamp_us):
+        self.v1 = v1
+        self.v2 = v2
+        self.v3 = v3
+        self.accuracy = accuracy
+        self.timestamp_us = timestamp_us
+
+    def __iter__(self):
+        yield self.v1
+        yield self.v2
+        yield self.v3
+
+    @property
+    def meta(self):
+        return self.accuracy, self.timestamp_us
+
+    @property
+    def full(self):
+        return self.v1, self.v2, self.v3, self.accuracy, self.timestamp_us
+
+    def __repr__(self):
+        return (
+            f"Sensor 3-tuple (v1={self.v1}, v2={self.v2}, v3={self.v3}, "
+            f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+        )
+
+class SensorReading4:
+    """4-element reading with optional metadata."""
+    __slots__ = ("v1", "v2", "v3", "v4", "accuracy", "timestamp_us")
+
+    def __init__(self, v1, v2, v3, v4, accuracy, timestamp_us):
+        self.v1 = v1
+        self.v2 = v2
+        self.v3 = v3
+        self.v4 = v4
+        self.accuracy = accuracy
+        self.timestamp_us = timestamp_us
+
+    def __iter__(self):
+        yield self.v1
+        yield self.v2
+        yield self.v3
+        yield self.v4
+
+    @property
+    def meta(self):
+        return self.accuracy, self.timestamp_us
+
+    @property
+    def full(self):
+        return self.v1, self.v2, self.v3, self.v4, self.accuracy, self.timestamp_us
+
+    def __repr__(self):
+        return (
+            f"Sensor 4-tuple (v1={self.v1}, v2={self.v2}, v3={self.v3}, v4={self.v4}, "
+            f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+        )
+
+# class SensorReading5:
+#     """5-element reading with optional metadata."""
+#     __slots__ = ("v1", "v2", "v3", "v4", "e1", "accuracy", "timestamp_us")
+#
+#     def __init__(self, v1, v2, v3, v4, e1, accuracy, timestamp_us):
+#         self.v1 = v1
+#         self.v2 = v2
+#         self.v3 = v3
+#         self.v4 = v4
+#         self.e1 = e1
+#         self.accuracy = accuracy
+#         self.timestamp_us = timestamp_us
+#
+#     def __iter__(self):
+#         yield self.v1
+#         yield self.v2
+#         yield self.v3
+#         yield self.v4
+#         yield self.e1
+#
+#
+#     @property
+#     def meta(self):
+#         return self.accuracy, self.timestamp_us
+#
+#     @property
+#     def full(self):
+#         return self.v1, self.v2, self.v3, self.v4, self.e1, self.accuracy, self.timestamp_us
+#
+#     def __repr__(self):
+#         return (
+#             f"Sensor 5-tuple(v1={self.v1}, v2={self.v2}, v3={self.v3}, v4={self.v4}, e1={self.e1},"
+#             f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+#         )
+
 class BNO08X:
     """Library for the BNO08x IMUs from Hillcrest Laboratories
 
@@ -627,6 +724,56 @@ class BNO08X:
         raise RuntimeError(f"Failed to get valid Report ID (0xf8) with {reset_type} reset")
 
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
+
+    # 3-Tuple Sensor Reports + accuracy + timestamp
+    @property
+    def linear_acceleration(self):
+        """A tuple representing the current linear acceleration values on the X, Y, and Z
+        axes in meters per second squared"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_LINEAR_ACCELERATION] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_LINEAR_ACCELERATION]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("linear acceleration report not enabled, use enable_feature") from None
+
+    @property
+    def acceleration(self):
+        self._process_available_packets()
+        try:
+            print(f"acc before {self._unread_report_count[BNO_REPORT_ACCELEROMETER]}")
+            self._unread_report_count[BNO_REPORT_ACCELEROMETER] = 0
+            print(f"acc clear  {self._unread_report_count[BNO_REPORT_ACCELEROMETER]}")
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_ACCELEROMETER]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("acceleration report not enabled, use enable_feature") from None
+
+    @property
+    def gravity(self):
+        """A tuple representing the gravity vector in the X, Y, and Z components
+        axes in meters per second squared"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_GRAVITY] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_GRAVITY]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("gravity report not enabled, use enable_feature") from None
+
+    @property
+    def gyro(self):
+        """A tuple representing Gyro's rotation measurements on the X, Y, and Z
+        axes in radians per second"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_GYROSCOPE] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_GYROSCOPE]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("gyroscope report not enabled, use enable_feature") from None
+
     @property
     def magnetic(self):
         """A tuple of the current magnetic field measurements on the X, Y, and Z axes"""
@@ -635,20 +782,43 @@ class BNO08X:
             print(f"mag before {self._unread_report_count[BNO_REPORT_MAGNETOMETER]}")
             self._unread_report_count[BNO_REPORT_MAGNETOMETER] = 0
             print(f"mag clear  {self._unread_report_count[BNO_REPORT_MAGNETOMETER]}")
-            return self._report_values[BNO_REPORT_MAGNETOMETER]
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_MAGNETOMETER]
+            return SensorReading3(x, y, z, acc, ts)
         except KeyError:
             raise RuntimeError("Magnetometer report not enabled, use enable_feature") from None
 
     @property
-    def quaternion(self):
-        """A quaternion representing the current rotation vector"""
+    def raw_acceleration(self):
+        """Returns the sensor's raw, unscaled value from the accelerometer registers"""
         self._process_available_packets()
         try:
-            # TODO BRC understand
-            self._unread_report_count[self._quaternion_euler_vector] = 0
-            return self._report_values[self._quaternion_euler_vector]
+            self._unread_report_count[BNO_REPORT_RAW_ACCELEROMETER] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_ACCELEROMETER]
+            return SensorReading3(x, y, z, acc, ts)
         except KeyError:
-            raise RuntimeError("quaternion report not enabled, use enable_feature") from None
+            raise RuntimeError("raw acceleration report not enabled, use enable_feature") from None
+
+    @property
+    def raw_gyro(self):
+        """Returns the sensor's raw, unscaled value from the gyro registers"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_RAW_GYROSCOPE] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_GYROSCOPE]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("raw gyroscope report not enabled, use enable_feature") from None
+
+    @property
+    def raw_magnetic(self):
+        """Returns the sensor's raw, unscaled value from the magnetometer registers"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_RAW_MAGNETOMETER] = 0
+            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_MAGNETOMETER]
+            return SensorReading3(x, y, z, acc, ts)
+        except KeyError:
+            raise RuntimeError("raw magnetic report not enabled, use enable_feature") from None
 
     @property
     def euler(self):
@@ -675,7 +845,20 @@ class BNO08X:
         t4 = +1.0 - 2.0 * (jsqr + q[2] * q[2])
         yaw = degrees(atan2(t3, t4))
 
-        return roll, tilt, yaw, q[4], q[5]
+        return SensorReading3(roll, tilt, yaw, q[4], q[5])
+
+    # 4-Tuple Sensor Reports + accuracy + timestamp
+    @property
+    def quaternion(self):
+        """A quaternion representing the current rotation vector"""
+        self._process_available_packets()
+        try:
+            # TODO BRC understand
+            self._unread_report_count[self._quaternion_euler_vector] = 0
+            i, j, k, r, acc, ts = self._report_values[self._quaternion_euler_vector]
+            return SensorReading4(i, j, k, r, acc, ts)
+        except KeyError:
+            raise RuntimeError("quaternion report not enabled, use enable_feature") from None
 
     @property
     def geomagnetic_quaternion(self):
@@ -683,7 +866,8 @@ class BNO08X:
         self._process_available_packets()
         try:
             self._unread_report_count[BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR] = 0
-            return self._report_values[BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR]
+            i, j, k, r, acc, ts = self._report_values[BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR]
+            return SensorReading4(i, j, k, r, acc, ts)
         except KeyError:
             raise RuntimeError("geomagnetic quaternion report not enabled, use enable_feature") from None
 
@@ -696,10 +880,12 @@ class BNO08X:
         self._process_available_packets()
         try:
             self._unread_report_count[BNO_REPORT_GAME_ROTATION_VECTOR] = 0
-            return self._report_values[BNO_REPORT_GAME_ROTATION_VECTOR]
+            i, j, k, r, acc, ts = self._report_values[BNO_REPORT_GAME_ROTATION_VECTOR]
+            return SensorReading4(i, j, k, r, acc, ts)
         except KeyError:
             raise RuntimeError("game quaternion report not enabled, use enable_feature") from None
 
+    # Other Sensor Reports
     @property
     def steps(self):
         """The number of steps detected since the sensor was initialized"""
@@ -709,50 +895,6 @@ class BNO08X:
             return self._report_values[BNO_REPORT_STEP_COUNTER]
         except KeyError:
             raise RuntimeError("steps report not enabled, use enable_feature") from None
-
-    @property
-    def linear_acceleration(self):
-        """A tuple representing the current linear acceleration values on the X, Y, and Z
-        axes in meters per second squared"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_LINEAR_ACCELERATION] = 0
-            return self._report_values[BNO_REPORT_LINEAR_ACCELERATION]
-        except KeyError:
-            raise RuntimeError("linear acceleration report not enabled, use enable_feature") from None
-
-    @property
-    def acceleration(self):
-        self._process_available_packets()
-        try:
-            print(f"acc before {self._unread_report_count[BNO_REPORT_ACCELEROMETER]}")
-            self._unread_report_count[BNO_REPORT_ACCELEROMETER] = 0
-            print(f"acc clear  {self._unread_report_count[BNO_REPORT_ACCELEROMETER]}")
-            return self._report_values[BNO_REPORT_ACCELEROMETER]
-        except KeyError:
-            raise RuntimeError("acceleration report not enabled, use enable_feature") from None
-
-    @property
-    def gravity(self):
-        """A tuple representing the gravity vector in the X, Y, and Z components
-        axes in meters per second squared"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_GRAVITY] = 0
-            return self._report_values[BNO_REPORT_GRAVITY]
-        except KeyError:
-            raise RuntimeError("gravity report not enabled, use enable_feature") from None
-
-    @property
-    def gyro(self):
-        """A tuple representing Gyro's rotation measurements on the X, Y, and Z
-        axes in radians per second"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_GYROSCOPE] = 0
-            return self._report_values[BNO_REPORT_GYROSCOPE]
-        except KeyError:
-            raise RuntimeError("gyroscope report not enabled, use enable_feature") from None
 
     @property
     def shake(self):
@@ -809,36 +951,6 @@ class BNO08X:
             return activity_classification
         except KeyError:
             raise RuntimeError("activity classification report not enabled, use enable_feature") from None
-
-    @property
-    def raw_acceleration(self):
-        """Returns the sensor's raw, unscaled value from the accelerometer registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_ACCELEROMETER] = 0
-            return self._report_values[BNO_REPORT_RAW_ACCELEROMETER]
-        except KeyError:
-            raise RuntimeError("raw acceleration report not enabled, use enable_feature") from None
-
-    @property
-    def raw_gyro(self):
-        """Returns the sensor's raw, unscaled value from the gyro registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_GYROSCOPE] = 0
-            return self._report_values[BNO_REPORT_RAW_GYROSCOPE]
-        except KeyError:
-            raise RuntimeError("raw gyroscope report not enabled, use enable_feature") from None
-
-    @property
-    def raw_magnetic(self):
-        """Returns the sensor's raw, unscaled value from the magnetometer registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_MAGNETOMETER] = 0
-            return self._report_values[BNO_REPORT_RAW_MAGNETOMETER]
-        except KeyError:
-            raise RuntimeError("raw magnetic report not enabled, use enable_feature") from None
 
     def begin_calibration(self) -> None:
         """Begin the sensor's self-calibration routine"""
@@ -909,6 +1021,37 @@ class BNO08X:
             if self._dcd_saved_at > start_time:
                 return
         raise RuntimeError("Could not save calibration data")
+
+    # Unimplemented (need to add to processing to reports before ARVR reports can be used
+    # @property
+    # def arvr_stablized_rotation(self):
+    #     """
+    #     The ARVR-stabilized rotation vector sensor reports the orientation of the device. Accumulated errprs
+    #     are corrected while the device is in motion, which limits discontinuities or jumps in data.
+    #     The format of the rotation vector is a unit quaternion plus accuracy estimate (5-tuple).
+    #     """
+    #     self._process_available_packets()
+    #     try:
+    #         self._unread_report_count[BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR] = 0
+    #         i, j, k, r, ae. acc, ts = self._report_values[BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR]
+    #         return SensorReading5(i, j, k, r, ae, acc, ts)
+    #     except KeyError:
+    #         raise RuntimeError("arvr stabilized rotation report not enabled, use enable_feature") from None
+    #
+    # @property
+    # def arvr_stablized_game_rotation(self):
+    #     """
+    #     The ARVR-stabilized game rotation vector sensor reports the orientation of the device. Accumulated errprs
+    #     are corrected while the device is in motion, which limits discontinuities or jumps in data.
+    #     The format of the rotation vector is a unit quaternion.
+    #     """
+    #     self._process_available_packets()
+    #     try:
+    #         self._unread_report_count[BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR] = 0
+    #         i, j, k, r. acc, ts = self._report_values[BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR]
+    #         return SensorReading4(i, j, k, r, ae, acc, ts)
+    #     except KeyError:
+    #         raise RuntimeError("arvr stabilized game rotation report not enabled, use enable_feature") from None
 
     ############### private/helper methods ###############
 
