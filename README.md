@@ -33,10 +33,11 @@ as every 4ms to 10ms (depending on the report requested).
     bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin)
 
 Required for I2C (see SPI and UART below):
-- address : if using 2 BNO08x each needs a separate address (depending on board, add solder jump or cut wire).
-- int_pin : required by I2C for accurate sensor timestamps. Define a Pin object, not  number.
+- address : each BNO08x needs a separate address (depending on board, add solder jump or cut wire).
+- int_pin : required for accurate sensor timestamps. Define a Pin object, not  number.
 
 Optional parameters:
+
     bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin=Pin(13), debug=False)
 
 Optional for I2C:
@@ -128,8 +129,6 @@ I2C will definitely limit this frequency (est 10 to 50 Hz with a few reports). O
 Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
 Some sensor reports can be updated at 400 to 400 Hz on SPI (untested). If your code request faster than the report
 feature frequency specified, repeated values will be returned.
-
-Before getting sensor results the reports must be enabled:
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # enable accelerometer reports at 40 Hertz
 
@@ -233,7 +232,7 @@ On can access the sensors report period for each with this function. Each sensor
 
 With a single feature, we've seen the above requested 100 Hz have the sensor report at 125Hz. With multiple featues we've also seen 20Hz changed to 10 Hz.
 
-## Calibration
+## Calibration of the Sensor
 
 background: https://www.youtube.com/watch?v=0rlvvYgmTvI&t=28s
 
