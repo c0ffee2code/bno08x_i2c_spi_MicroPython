@@ -11,8 +11,7 @@
 `bno08x`
 ================================================================================
 
-Helper library for the CEVA  Hillcrest Laboratories BNO08x IMUs
-
+Driver library for  BNO08x IMUs by CEVA  Hillcrest Laboratories
 * Author(s): Bryan Siepert
 * Author(s): dobodu
 * Author(s): bradcar
@@ -28,29 +27,26 @@ Implementation Notes
 
 * MicroPython
 
-TODO: updating sensor values more asychronously
-TODO: add 3-tuple, 4-tuple, 5-tuple returns, also with .meta and .full returns with acc & ts
+Using interrupt pin on all sensor types so can accuractly get timestamp of sensor readings
 
-TODO: debug soft reset in SPI
-
-TODO: BRC test i2c with Reset & Interrupt pins (no wake?)
-TODO: BRC I2c add quick fail and good error message if no i2c devices found
-TODO: BRC add protection to ensure only pin objects, not numbers are passed in (spi.py, i2c.py, and uart)
-TODO: BRC Euler/quaternion implementation
-TODO: BRC add TARE
-# TODO:
-# Default Reports Frequencies (Hz) - does this code have report frequencies right?
-# Calibrated Acceleration (m/s^2)
-# Euler Angles (in degrees?)
-# CALIBRATION
-
-#
 Delay
 1. When the timebase reference report is provided with individual sensor report
    it will likely have a delay of zero.
 2. In cases where sensor reports are concatenated (due to delays in processing),
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
+
+TODO: debug soft reset for SPI
+TODO: retest CALIBRATION
+
+TODO: BRC test i2c with Reset & Interrupt pins 
+TODO: BRC I2c add quick fail and good error message if no i2c devices found
+TODO: BRC test UART with Reset & Interrupt pins 
+
+TODO: updating sensor values more efficiently
+
+TODO: BRC Euler/quaternion implementation
+TODO: BRC add TARE
 
 """
 
@@ -199,8 +195,6 @@ _DEFAULT_TIMEOUT = 2.0  # timeout in seconds
 _CALIBRATION_TIMEOUT = 5.0  # 10 sec
 _TIMEOUT_SHORT_MS = 100  # short sensor knows ME status, just needs to package and send (few ms)
 _BNO08X_CMD_RESET = const(0x01)
-_QUAT_Q_POINT = const(14)  # TODO dobodu sets to 0x05 ???
-_BNO_HEADER_LEN = const(4)
 
 # Status Constants
 _COMMAND_STATUS_SUCCESS = 0
@@ -241,12 +235,6 @@ _Q_POINT_9_SCALAR = 2 ** (9 * -1)
 _Q_POINT_8_SCALAR = 2 ** (8 * -1)
 _Q_POINT_4_SCALAR = 2 ** (4 * -1)
 
-_GYRO_SCALAR = _Q_POINT_9_SCALAR
-_ACCEL_SCALAR = _Q_POINT_8_SCALAR
-_QUAT_SCALAR = _Q_POINT_14_SCALAR
-_GEO_QUAT_SCALAR = _Q_POINT_12_SCALAR
-_MAG_SCALAR = _Q_POINT_4_SCALAR
-
 _REPORT_LENGTHS = {
     _SHTP_REPORT_PRODUCT_ID_RESPONSE: 16,
     _GET_FEATURE_RESPONSE: 17,
@@ -274,6 +262,7 @@ _RESET_CAUSE_STRING = [
 ]
 
 # Available sensor reports
+# TODO double check the Q points, also seem ARVR needs 13 for accuracy est?
 _AVAIL_SENSOR_REPORTS = {
     BNO_REPORT_ACCELEROMETER: (_Q_POINT_8_SCALAR, 3, 10),
     BNO_REPORT_GYROSCOPE: (_Q_POINT_9_SCALAR, 3, 10),
@@ -479,12 +468,15 @@ def _insert_command_request_report(
 
 
 class Packet:
-    """A class representing a Hillcrest Laboratory Sensor Hub Transport packet"""
+    """
+    A class representing a Hillcrest Laboratory Sensor Hub Transport packet
+    4-byte header
+    """
 
     def __init__(self, packet_bytes: bytearray) -> None:
         self.header = self.header_from_buffer(packet_bytes)
-        data_end_index = self.header.data_length + _BNO_HEADER_LEN
-        self.data = packet_bytes[_BNO_HEADER_LEN:data_end_index]
+        data_end_index = self.header.data_length + 4
+        self.data = packet_bytes[4:data_end_index]
 
     def __str__(self) -> str:
         length = self.header.packet_byte_count
@@ -1018,7 +1010,7 @@ class BNO08X:
                 return
         raise RuntimeError("Could not save calibration data")
 
-    # Unimplemented (need to add to processing to reports before ARVR reports can be used
+    # Unimplemented (need to add to processing to reports before ARVR reports can be used)
     # @property
     # def arvr_stablized_rotation(self):
     #     """
@@ -1243,7 +1235,6 @@ class BNO08X:
 
         # status, accel_en, gyro_en, mag_en, planar_en, table_en, *_reserved) = response_values
         command_status, *_rest = response_values
-        self._last_cmd_rsp = (command, command_status)  # TODO BRC is this vestigial? <--- ADD THIS
 
         if command == _ME_CALIBRATE and command_status == 0:
             self._me_calibration_started_at = ticks_ms()
@@ -1266,7 +1257,6 @@ class BNO08X:
     def _process_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
         Process reports both sensor and control reports
-        TODO: BRC handle ARVR 5 tuple at end
 
         Extracted accuracy and delay from sensor report (100usec ticks)
         Multiple reports are processed in the order they appear in the packet buffer.
@@ -1352,7 +1342,7 @@ class BNO08X:
             return
 
         # General Case all other sensors
-        # TODO fix for ARVR 4-tuple and ARVR 5-tuple for ARVR-Stabilized Rotation Vector (0x28)
+        # FUTURE: TODO fix ARVR 5-tuple for ARVR-Stabilized Rotations (0x280
         sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
         self._dbg(f"Report: {reports[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
         self._sensor_timestamp = self.last_interrupt_us - self._last_base_timestamp_us + delay_us
@@ -1399,8 +1389,6 @@ class BNO08X:
         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
 
         try:
-            # TODO BRC May need to revert to general Packet handling since previous enabled functions
-            # already start sending reports and this may get mixed up
             report_bytes = self._wait_for_packet(_BNO_CHANNEL_CONTROL, _GET_FEATURE_RESPONSE,
                                                  timeout=_FEATURE_ENABLE_TIMEOUT)
             data = report_bytes.data
