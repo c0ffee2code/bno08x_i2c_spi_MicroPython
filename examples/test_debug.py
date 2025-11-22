@@ -5,22 +5,25 @@
 from time import sleep
 
 from i2c import BNO08X_I2C
-from bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, BNO_REPORT_ACCELEROMETER
+#from bno08x import BNO_REPORT_GYROSCOPE, BNO_REPORT_GAME_ROTATION_VECTOR, BNO_REPORT_MAGNETOMETER, BNO_REPORT_ACCELEROMETER
+from bno08x import *
 
 from machine import I2C, Pin
 from utime import ticks_ms, sleep_us
 
 int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, BNO (RST) signals when ready
 reset_pin = Pin(15, Pin.OUT)  # Reset, tells BNO (INT) to reset
+reset_pin = None
 
-i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=100_000, timeout=200_000)
+
+i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=400_000)
 
 print("Start")
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("====================================")
 
-bno = BNO08X_I2C(i2c0, address=0x4B, debug=False)
-#bno = BNO08X_I2C(i2c0, address=0x4B, reset_pin=reset_pin, int_pin=int_pin, debug=True)
+#bno = BNO08X_I2C(i2c0, address=0x4B, int_pin=int_pin, debug=False)
+bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin, debug=False)
 
 bno.enable_feature(BNO_REPORT_ACCELEROMETER, 125)
 
