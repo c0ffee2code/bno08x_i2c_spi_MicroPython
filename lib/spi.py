@@ -54,43 +54,38 @@ class BNO08X_SPI(BNO08X):
         if wake_pin is None:
             raise RuntimeError("wake_pin is required for SPI operation")
         if not isinstance(wake_pin, Pin):
-            raise TypeError("wake_pin must be a Pin object, not Pin number")
+            raise TypeError("wake_pin must be a Pin object, not {type(wake_pin)}")
         self._wake = wake_pin
         self._wake.value(1) # wake_pin must be high to select SPI operation
 
         if cs_pin is None:
             raise RuntimeError("cs_pin is required for SPI operation")
         if not isinstance(cs_pin, Pin):
-            raise TypeError("cs_pin must be a Pin object, not Pin number")
+            raise TypeError("cs_pin must be a Pin object, not {type(cs_pin)}")
         self._cs = cs_pin
         self._cs.value(1) # ensure CS is de-asserted before communication
         
         if int_pin is None:
             raise RuntimeError("int_pin is required for SPI operation")
         if not isinstance(int_pin, Pin):
-            raise TypeError("int_pin must be a Pin object, not Pin number")
+            raise TypeError("int_pin must be a Pin object, not {type(int_pin)}")
         self._int = int_pin
 
         if reset_pin is not None and not isinstance(reset_pin, Pin):
-            raise TypeError(f"Reset (RST) pin must be a 'machine.Pin' object or None, not {type(rst_pin)}.")
+            raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
 
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin, debug=debug)
 
-    # TODO test soft_reset in base class
-    # TODO should hard_reset be in base class?
-    def hard_reset(self):
-        self._dbg("*** Hard Reset start...")
-        self._reset.value(1)
-        sleep_ms(10)
-        self._reset.value(0)
-        sleep_ms(1)  # only 10 ns required
-        self._reset.value(1)
-        sleep_ms(100)  # 6.5.3 says need 90 ms + 4 ms
-        self._wait_for_int()
-        sleep_ms(50)
-        self._read_packet()
-        self._dbg("*** Hard Reset End, awaiting Acknowledgement")
+
+    def _wake_signal(self):
+        # UART operation reqires wake_pin is None
+        if self._wake_pin is not None:
+            self._dbg("WAKE Pulse for BNO08x (spi.py)")
+            self._wake_pin.value(0)
+            sleep_ms(2)  # lower than 1ms doesn't seem to work
+            self._wake_pin.value(1)
+            sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
 
     def _wait_for_int(self):
         """
@@ -107,11 +102,7 @@ class BNO08X_SPI(BNO08X):
         # SPI operation Requires wake_pin
         # I2C & UARToperation reqires NO wake_pin (None)
         if self._wake is not None and self._wake.value() == 1:
-            self._dbg("WAKE Pulse to ensure BNO08x is out of sleep before INT.")
-            self._wake.value(0)
-            sleep_us(1)
-            self._wake.value(1)
-            # sleep_ms(1)  # 6.5.4. BNO08X wakeup from wake signal assert (twk) 150 µs
+            self._wake_signal()
 
         if self._int.value() == 0:
             self._dbg("INT is active low (0) on entry.")
@@ -141,9 +132,9 @@ class BNO08X_SPI(BNO08X):
 
         self._cs.value(0)
         sleep_us(1)
-        self._spi.readinto(memoryview(buf)[start:end], 0x00)
+        mv = memoryview(buf)[start:end]
+        self._spi.readinto(mv, 0x00)
         self._cs.value(1)
-        # self._dbg(f"SPI read {end - start} bytes:", [hex(x) for x in buf[start:end]])
 
     def _read_header(self, wait=True):
         """Reads the first 4 bytes available as a header"""
@@ -155,16 +146,13 @@ class BNO08X_SPI(BNO08X):
             if self._int.value() != 0:
                 self._dbg("Not waiting for INT. Pin is HIGH (1). Aborting read: No data ready.")
                 raise PacketError("INT pin high, no data.")
-
             self._dbg("Not waiting for INT. Pin is LOW (0). Proceeding to read...")
 
         self._cs.value(0)
         sleep_us(1)
-        self._spi.readinto(memoryview(self._data_buffer)[:4], 0x00)
+        mv = memoryview(self._data_buffer)[:4]
+        self._spi.readinto(mv, 0x00)
         self._cs.value(1)
-        
-        #TODO BRC remove, this is a lot of log ata
-        self._dbg(f"RAW HEADER: {[hex(b) for b in self._data_buffer[0:4]]}")
 
         if not wait:
             packet_len = self._data_buffer[0] | (self._data_buffer[1] << 8)
@@ -222,20 +210,21 @@ class BNO08X_SPI(BNO08X):
         self._update_sequence_number(new_packet)
         return new_packet
 
-
     def _send_packet(self, channel, data):
+        seq = self._tx_sequence_number[channel]
         data_length = len(data)
         write_length = data_length + 4
+        pack_into("<HBB", self._data_buffer, 0, write_length, channel, seq)
 
-        pack_into("<H", self._data_buffer, 0, write_length)
-        self._data_buffer[2] = channel
-        self._data_buffer[3] = self._rx_sequence_number[channel]
-        self._data_buffer[4:write_length] = data
+        mv = memoryview(self._data_buffer)
+        mv[4:4+data_length] = data
 
         self._cs.value(0)
         sleep_us(1)
-        self._spi.write(self._data_buffer[:write_length])
+        self._spi.write(mv[:write_length])  # also zero-copy
         self._cs.value(1)
 
-        self._rx_sequence_number[channel] = (self._rx_sequence_number[channel] + 1) % 256
-        return self._rx_sequence_number[channel]
+        self._tx_sequence_number[channel] = (seq + 1) & 0xFF
+        return seq
+
+
