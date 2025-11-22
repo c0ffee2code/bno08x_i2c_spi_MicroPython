@@ -12,9 +12,9 @@
 ================================================================================
 
 Driver library for  BNO08x IMUs by CEVA  Hillcrest Laboratories
+* Author(s): bradcar - 100% inspired by Bryan & dobodu
 * Author(s): Bryan Siepert
 * Author(s): dobodu
-* Author(s): bradcar
 
 Implementation Notes
 --------------------
@@ -40,7 +40,6 @@ TODO: debug soft reset for SPI
 TODO: retest CALIBRATION
 
 TODO: BRC test i2c with Reset & Interrupt pins 
-TODO: BRC I2c add quick fail and good error message if no i2c devices found
 TODO: BRC test UART with Reset & Interrupt pins 
 
 TODO: updating sensor values more efficiently
@@ -63,7 +62,7 @@ from micropython import const
 from utime import ticks_us, ticks_ms, ticks_diff, sleep_ms, sleep_us
 
 # import support files
-from debug import channels, reports
+
 
 # Commands
 BNO_CHANNEL_SHTP_COMMAND = const(0)
@@ -72,6 +71,15 @@ _BNO_CHANNEL_CONTROL = const(2)
 _BNO_CHANNEL_INPUT_SENSOR_REPORTS = const(3)
 _BNO_CHANNEL_WAKE_INPUT_SENSOR_REPORTS = const(4)
 _BNO_CHANNEL_GYRO_ROTATION_VECTOR = const(5)
+
+channels = {
+    0x0: "SHTP_COMMAND",
+    0x1: "EXE",
+    0x2: "CONTROL",
+    0x3: "INPUT_SENSOR_REPORTS",
+    0x4: "WAKE_INPUT_SENSOR_REPORTS",
+    0x5: "GYRO_ROTATION_VECTOR",
+}
 
 _GET_FEATURE_REQUEST = const(0xFE)
 _SET_FEATURE_COMMAND = const(0xFD)
@@ -419,29 +427,11 @@ def _parse_sensor_report_data(report_bytes: bytearray) -> tuple[tuple, int, int]
     return scaled_data, accuracy, delay_us
 
 
-def _parse_sensor_id(buffer: bytearray) -> tuple[int, ...]:
-    """Parse the fields of a product id report"""
-    if not buffer[0] == _SHTP_REPORT_PRODUCT_ID_RESPONSE:
-        raise AttributeError(f"Wrong report id for sensor id: {hex(buffer[0])}")
-    reset_cause = unpack_from("<B", buffer, 1)[0]
-    sw_major = unpack_from("<B", buffer, 2)[0]
-    sw_minor = unpack_from("<B", buffer, 3)[0]
-    sw_part_number = unpack_from("<I", buffer, 4)[0]
-    sw_build_number = unpack_from("<I", buffer, 8)[0]
-    sw_patch = unpack_from("<H", buffer, 12)[0]
-    return reset_cause, sw_part_number, sw_major, sw_minor, sw_patch, sw_build_number
-
-
 ############ COMMAND PARSING ###########################
 def _parse_command_response(report_bytes: bytearray):
     # CMD response report:
-    # 0 Report ID = 0xF1
-    # 1 Sequence number
-    # 2 Command
-    # 3 Command sequence number
-    # 4 Response sequence number
-    # 5 R0-10 A set of response values. The interpretation of these values is specific
-    # to the response for each command.
+    # 5 bytes: Report ID = 0xF1, Sequence number, Command, Command sequence , Response sequence
+    # 11 bytes: R0-10 A set of response values for each command.
     report_body = unpack_from("<BBBBB", report_bytes)
     response_values = unpack_from("<BBBBBBBBBBB", report_bytes, 5)
     return report_body, response_values
@@ -485,12 +475,12 @@ class Packet:
         outstr += f"DBG::\t\t Data Len: {self.header.data_length}\n"
         outstr += f"DBG::\t\t Channel: {channels[self.channel_number]} ({self.channel_number})\n"
         if self.channel_number in {_BNO_CHANNEL_CONTROL, _BNO_CHANNEL_INPUT_SENSOR_REPORTS, }:
-            if self.report_id in reports:
-                outstr += f"DBG::\t\t Report Type: {reports[self.report_id]} ({hex(self.report_id)})\n"
+            if self.report_id in _REPORTS_DICTIONARY:
+                outstr += f"DBG::\t\t Report Type: {_REPORTS_DICTIONARY[self.report_id]} ({hex(self.report_id)})\n"
             else:
                 outstr += f"DBG::\t\t \t** UNKNOWN Report Type **: {hex(self.report_id)}\n"
-            if self.report_id == 0xFC and len(self.data) >= 6 and self.data[1] in reports:
-                outstr += f"DBG::\t\t Enabled Feature: {reports[self.data[1]]} ({hex(self.data[1])})\n"
+            if self.report_id == 0xFC and len(self.data) >= 6 and self.data[1] in _REPORTS_DICTIONARY:
+                outstr += f"DBG::\t\t Enabled Feature: {_REPORTS_DICTIONARY[self.data[1]]} ({hex(self.data[1])})\n"
                 outstr += f"DBG::\t\t Sequence number: {self.header.sequence_number}\n"
         outstr += "\nDBG::\t\tData:"
 
@@ -616,7 +606,6 @@ class SensorReading4:
 #         yield self.v4
 #         yield self.e1
 #
-#
 #     @property
 #     def meta(self):
 #         return self.accuracy, self.timestamp_us
@@ -651,7 +640,7 @@ class BNO08X:
         self._int_pin = int_pin
         self._wake_pin = wake_pin
         self._cs_pin = cs_pin
-        self._dbg("********** __init__ on {_interface} Interface *************\n")
+        self._dbg(f"********** __init__ on {_interface} Interface *************\n")
         self._data_buffer: bytearray = bytearray(DATA_BUFFER_SIZE)
         self._data_buffer_memoryview = memoryview(self._data_buffer)
         self._command_buffer: bytearray = bytearray(12)
@@ -673,6 +662,7 @@ class BNO08X:
         self._wait_for_initialize = True
         self._init_complete = False
         self._id_read = False
+        self._reset_mismatch = False
         self._quaternion_euler_vector = BNO_REPORT_GAME_ROTATION_VECTOR  # default can change with set_quaternion_euler
         # dictionary of most recent values from each enabled sensor report
         self._report_values = {}
@@ -680,11 +670,18 @@ class BNO08X:
         self._unread_report_count = {}
         self._report_periods_dictionary_us = {}
 
+        # set int_pin interrupt, Active-low interrupt → falling edge
+        self._int_pin.irq(trigger=Pin.IRQ_FALLING, handler=self._on_interrupt)
+        
         self.reset_sensor()
+        
+        # significant spi, i2c, or uart by now, if int_pin interrupt thenraise error
+        print(f"{self.prev_interrupt_us=} {self.last_interrupt_us=}")
+        if self.last_interrupt_us == 0:
+            raise RuntimeError("No int_pin signals, check int_pin wiring")
+        
         self._dbg("********** End __init__ *************\n")
 
-        # Active-low interrupt → falling edge
-        self._int_pin.irq(trigger=Pin.IRQ_FALLING, handler=self._on_interrupt)
 
     def _on_interrupt(self, pin):
         """
@@ -696,21 +693,27 @@ class BNO08X:
 
     def reset_sensor(self):
         if self._reset_pin:
-            self.hard_reset()
+            self._hard_reset()
             reset_type = "Hard"
         else:
-            self.soft_reset()
+            self._soft_reset()
             reset_type = "Soft"
 
         for attempt in range(3):
             try:
-                if self._check_id():
+                if self._check_id() and not self._reset_mismatch:
                     self._dbg(f"*** {reset_type} reset successful, acknowledged with 0xF8 response")
                     sleep_ms(100)  # allow SHTP time to settle
                     self._init_complete = True
+                    # Reset tx and rx sequence numbers, BNO08X initially sets sequence numbers to 0 after boot.
+                    self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
+                    self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
                     return
+                if self._reset_mismatch:
+                    raise RuntimeError("Reset cause mismatch; check reset_pin wiring")
             except OSError as e:
                 self._dbg(f"Attempt {attempt + 1} failed with OSError: {e}")
+
             sleep_ms(600)  # TODO BRC revisit if this duration is really needed
         #
         raise RuntimeError(f"Failed to get valid Report ID (0xf8) with {reset_type} reset")
@@ -1225,7 +1228,12 @@ class BNO08X:
             self._dbg(f"*** Part Number: {sw_part_number}")
             self._dbg(f"*** Software Version: {sw_major}.{sw_minor}.{sw_patch}")
             self._dbg(f"\tBuild: {sw_build_number}\n")
-
+            
+            # After the first Product ID Response the reports will be 0 and need to be ignored
+            if reset_cause != 0:
+                if self._reset_pin is not None:
+                    if reset_cause != 4:  # 4 = expected hardware-reset via reset pin
+                        self._reset_mismatch = True
             self._id_read = True
             return
 
@@ -1266,7 +1274,7 @@ class BNO08X:
         # handle typical sensor reports first
         if 0x01 <= report_id <= 0x09:
             sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
-            self._dbg(f"Report: {reports[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
+            self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
 
             self._sensor_us = self.last_interrupt_us - self._last_base_timestamp_us + delay_us
             print(
@@ -1344,7 +1352,7 @@ class BNO08X:
         # General Case all other sensors
         # FUTURE: TODO fix ARVR 5-tuple for ARVR-Stabilized Rotations (0x280
         sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
-        self._dbg(f"Report: {reports[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
+        self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
         self._sensor_timestamp = self.last_interrupt_us - self._last_base_timestamp_us + delay_us
         self._report_values[report_id] = sensor_data
         return
@@ -1378,13 +1386,7 @@ class BNO08X:
             self._dbg(f" Feature dependency: {feature_dependency}")
             self.enable_feature(feature_dependency, DEFAULT_REPORT_FREQ[feature_dependency])
 
-        # UART operation reqires wake_pin is None
-        if self._wake_pin is not None:
-            self._dbg("Enable feature WAKE Pulse to ensure BNO08x is out of sleep before INT.")
-            self._wake_pin.value(0)
-            sleep_ms(2)  # lower than 1ms doesn't seem to work
-            self._wake_pin.value(1)
-            sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
+        self._wake_signal()
 
         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
 
@@ -1405,6 +1407,8 @@ class BNO08X:
 
         except RuntimeError:
             raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {feature_id}")
+
+
 
     def report_period_us(self, feature_id):
         """
@@ -1493,7 +1497,7 @@ class BNO08X:
             print("DBG::\t\t", *args, **kwargs)
 
 
-    def hard_reset(self) -> None:
+    def _hard_reset(self) -> None:
         """Hardware reset the sensor to an initial unconfigured state"""
         if not self._reset_pin:
             return
@@ -1504,27 +1508,58 @@ class BNO08X:
         self._reset_pin.value(0)
         sleep_us(10)  # sleep_us(1), data sheet say only 10ns required,
         self._reset_pin.value(1)
-        sleep_ms(200)  # orig was 10ms, datasheet implies 94 ms required
-        self._dbg("*** Hard Reset End, awaiting Acknowledgement")
+        sleep_ms(500)  # orig was 10ms, datasheet implies 94 ms required
+        
+        self._dbg("*** Hard Reset End, awaiting acknowledgement (0xf8)")
 
-    def soft_reset(self) -> None:
-        """Reset the sensor to an initial unconfigured state"""
-        self._dbg("Start SOFT RESET...")
+    def _soft_reset(self) -> None:
+        """
+        Send the 'reset' command packet over special Executable Channel (1) for BNO08X firmware restart.
+        Section 1.3.1 SHTP states: The executable channel (channel=1) allows the host to reset the BNO08X
+        and provide operating mode details. Use write 0x01 – reset, read 0x01 - reset complete.
+        """
+        self._dbg(f"*** Soft Reset, Channel={BNO_CHANNEL_EXE} command={_BNO08X_CMD_RESET}, starting...")
+        reset_payload = bytearray([_BNO08X_CMD_RESET])
+        self._send_packet(BNO_CHANNEL_EXE, reset_payload)
+        sleep_ms(500) # seems to be best with 500ms
 
-        data = bytearray(1)
-        data[0] = 1
-        _seq = self._send_packet(BNO_CHANNEL_EXE, data)
-        sleep_ms(500)
-        _seq = self._send_packet(BNO_CHANNEL_EXE, data)
-        sleep_ms(500)
+        start_time = ticks_ms()
+        self._dbg("Process packets, until get Product ID report (0xf8)...")
 
-        for _i in range(3):
+        # Loop for a short period to process reports (like Timestamp or Command Response)
+        while _elapsed_sec(start_time) < 1.0:
             try:
-                _packet = self._read_packet()
-            except PacketError:
-                sleep_ms(500)
+                # Check for enough bytes for a header (4) to prevent blocking indefinitely
+                if not self._data_ready:
+                    sleep_ms(10)
+                    continue
 
-        self._dbg("End Soft RESET, awaiting Acknowledgement")
+                packet = self._read_packet()
+                self._handle_packet(packet)
+                self._dbg(f"Initial packet, Channel {packet.channel_number} (Seq {packet.sequence_number}).")
+
+            except (RuntimeError, PacketError):
+                # expected end-of-burst condition (timeout, no more data)
+                break
+
+            except KeyError as e:
+                self._dbg(f"exit Soft Teset: minor KeyError caught, likely stream end/data access, Error:{e})")
+                break
+
+            except Exception as e:
+                self._dbg(f"FATAL UNEXPECTED ERROR during boot processing: (Type: {type(e)}): {e}. Exiting.")
+                raise  # Re-raise when unexpected and fatal
+
+        self._dbg("End Soft RESET in bno08x.py")
+
+    def _wake_signal(self):
+        # UART operation reqires wake_pin is None
+        if self._wake_pin is not None:
+            self._dbg("WAKE pulse to ensure BNO08x is out of sleep")
+            self._wake_pin.value(0)
+            sleep_ms(2)  # lower than 1ms doesn't seem to work
+            self._wake_pin.value(1)
+            sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
 
     def _send_packet(self, channel, data):
         raise RuntimeError("_send_packet Not implemented in bno08x.py, supplanted by I2C or SPI subclass")
