@@ -182,7 +182,7 @@ class BNO08X_UART(BNO08X):
         self._dbg(f"_data_ready: {self._uart.any()}")
         return self._uart.any() >= 4
 
-    def soft_reset(self):
+    def _soft_reset(self):
         """
         UART has its own Soft reset,
         Sends the 0x01 'reset' command over Channel 1 (Executable) 
@@ -237,7 +237,7 @@ class BNO08X_UART(BNO08X):
 
         self._dbg("End Soft RESET in uart.py")
 
-    def hard_reset(self) -> None:
+    def _hard_reset(self) -> None:
         """
         Hardware reset the sensor to an initial state
         UART handles SHTP protocol and must evaluate command packet response
