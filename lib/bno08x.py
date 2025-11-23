@@ -36,10 +36,9 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-TODO: BRC updating sensor values more efficiently - spi @ 5.4ms 183Hz
+TODO: BRC updating sensor values more efficiently - spi @ 3.2  ms 312Hz
 
-TODO: BRC figure out read wait, is this needed?
-
+TODO: I2C/UART _process_available_packets: if ticks_diff(ticks_ms(), start_time) > 1
 TODO: BRC fix UART mis-framing (with quaternions?)
 TODO: BRC test UART with Reset & Interrupt pins
 
@@ -1057,8 +1056,6 @@ class BNO08X:
         """
         Read and handle up to `max_packets` packets while a new interrupt is available.
         safety timeout if data ready stuck
-        TODO: > 50 way too long, changed to > 3
-        TODO: With this logic, _data_ready stays True until all packets are read.
         If _read_packet() does not return all data for one interrupt,
         we may need a “drain loop” until no more packets exist.
         """
@@ -1070,22 +1067,24 @@ class BNO08X:
                 new_packet = self._read_packet(wait=False)
             except PacketError:
                 # Transient read errors should not block
-                sleep_us(250)
+                sleep_us(100)
                 continue
 
             if new_packet:
                 self._handle_packet(new_packet)
                 processed_count += 1
-                self._dbg(f"Processed {processed_count} packet{'s' if processed_count > 1 else ''}")
+                # commented out self._dbg in time critical loops
+                # self._dbg(f"Processed {processed_count} packet{'s' if processed_count > 1 else ''}")
 
             # Safety timeout to avoid infinite loop if interrupt stuck
-            if ticks_diff(ticks_ms(), start_time) > 2:  # ms
+            if ticks_diff(ticks_ms(), start_time) > 1:  # ms
                 self._dbg("Timeout in _process_available_packets")
                 break
 
         flag = processed_count > 0
-        self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
-        # TODO add print if helpful in debug
+        # commented out self._dbg in time critical loops
+        # self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
+        # add back in print if helpful in debug
         # print(f"proc_avail_packets: {self._unread_report_count}")
         return flag
 
@@ -1181,10 +1180,10 @@ class BNO08X:
                 # Process immediately (instead of building slices list)
                 self._process_report(report_id, report_view)
                 report_count += 1
-
                 next_byte_index += required_bytes
-
-            self._dbg(f"HANDLING {report_count} PACKET{'S' if report_count > 1 else ''}...")
+                
+            # commented out self._dbg in time critical loops
+            # self._dbg(f"HANDLING {report_count} PACKET{'S' if report_count > 1 else ''}...")
 
         except Exception as error:
             self._dbg(f"Handle Packet: Packet bytes:{[hex(b) for b in packet.data[:4]]}...")
@@ -1280,7 +1279,8 @@ class BNO08X:
         # handle typical sensor reports first
         if 0x01 <= report_id <= 0x09:
             sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
-            self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
+            # remove self._dbg from time critical operations
+            # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
 
             self._sensor_us = self.last_interrupt_us - self._last_base_timestamp_us + delay_us
             # tpical irq is 1.4 ms to 1.67 ms with print

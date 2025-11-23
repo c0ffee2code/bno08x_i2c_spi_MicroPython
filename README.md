@@ -212,7 +212,7 @@ PS0 and PS1 are the host interface protocol selection pins, therefore UART can n
 
 ## Report Maximum Frequencioes
 
-Currently, the SPI interface can service 4ms reports in 5.4ms (185Hz), I2C is slower #.#ms (xxxHz).  When you ask for
+Currently On Pico 2 W, the SPI interface can service 2ms reports is 3.2 ms (312Hz), I2C is slower #.#ms (xxxHz).  When you ask for
 reports at shorter period the reporting frequency slows. Try you own experiments and let me know what you find.
 
 | **Feature**             | **Max Frequency (Hz)** | **msec/Report** | **period we've seen**  |
