@@ -26,10 +26,17 @@ the loop means the driver will frequently miss the 10ms deadline when polling.
 """
 from struct import pack_into
 
-from utime import ticks_ms, sleep_ms, sleep_us
+import uctypes
 from machine import Pin
+from utime import ticks_ms, sleep_ms, sleep_us
 
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE, _elapsed_sec
+
+_HEADER_STRUCT = {
+    "packet_bytes": (uctypes.UINT16 | 0),
+    "channel": (uctypes.UINT8 | 2),
+    "sequence": (uctypes.UINT8 | 3),
+}
 
 
 class BNO08X_SPI(BNO08X):
@@ -51,21 +58,21 @@ class BNO08X_SPI(BNO08X):
         self._spi.init(baudrate=baudrate, polarity=1, phase=1)
         self._debug = debug
         _interface = "SPI"
-        
+
         if wake_pin is None:
             raise RuntimeError("wake_pin is required for SPI operation")
         if not isinstance(wake_pin, Pin):
             raise TypeError("wake_pin must be a Pin object, not {type(wake_pin)}")
         self._wake = wake_pin
-        self._wake.value(1) # wake_pin must be high to select SPI operation
+        self._wake.value(1)  # wake_pin must be high to select SPI operation
 
         if cs_pin is None:
             raise RuntimeError("cs_pin is required for SPI operation")
         if not isinstance(cs_pin, Pin):
             raise TypeError("cs_pin must be a Pin object, not {type(cs_pin)}")
         self._cs = cs_pin
-        self._cs.value(1) # ensure CS is de-asserted before communication
-        
+        self._cs.value(1)  # ensure CS is de-asserted before communication
+
         if int_pin is None:
             raise RuntimeError("int_pin is required for SPI operation")
         if not isinstance(int_pin, Pin):
@@ -75,9 +82,9 @@ class BNO08X_SPI(BNO08X):
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
-        
-        super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin, debug=debug)
 
+        super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
+                         debug=debug)
 
     def _wake_signal(self):
         # UART operation reqires wake_pin is None
@@ -118,24 +125,10 @@ class BNO08X_SPI(BNO08X):
             if self._debug and ticks_ms() % 500 < 5:  # Log every ~0.5 seconds
                 self._dbg(f"INT value still high (1) at T={_elapsed_sec(start_time):.3f}s")
 
-            sleep_us(100) # TODO How long?
+            sleep_us(100)  # TODO How long?
 
         self._dbg(f"Timeout (3.0s) reached. INT pin state: {self._int.value()}")
         raise RuntimeError("Timeout waiting for INT to go low")
-
-
-    def _read_into(self, buf, start=0, end=None):
-
-        if end is None:
-            end = len(buf)
-        if end <= start:
-            return
-
-        self._cs.value(0)
-        sleep_us(1)
-        mv = memoryview(buf)[start:end]
-        self._spi.readinto(mv, 0x00)
-        self._cs.value(1)
 
     def _read_header(self, wait=True):
         """Reads the first 4 bytes available as a header"""
@@ -155,14 +148,15 @@ class BNO08X_SPI(BNO08X):
         self._spi.readinto(mv, 0x00)
         self._cs.value(1)
 
-        if not wait:
-            packet_len = self._data_buffer[0] | (self._data_buffer[1] << 8)
+        header_view = uctypes.struct(uctypes.addressof(mv), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
 
-            if packet_len == 0xFFFF or packet_len == 0:
-                self._dbg(f"Non-blocking read FAILED despite INT being low. Header length: {hex(packet_len)}")
+        if not wait:
+            packet_length = header_view.packet_bytes
+
+            if packet_length == 0xFFFF or packet_length == 0:
                 raise PacketError("No valid packet received despite INT being low")
 
-            self._dbg(f"Non-blocking read SUCCESS. Header length: {packet_len}. Pin state: {self._int.value()}")
+            self._dbg(f"Non-blocking read SUCCESS. Header length: {packet_length}. Pin state: {self._int.value()}")
 
         self._dbg("")
 
@@ -179,28 +173,32 @@ class BNO08X_SPI(BNO08X):
 
         halfpacket = False
 
-        if self._data_buffer[1] & 0x80:
+        mv = memoryview(self._data_buffer)
+        if mv[1] & 0x80:
             halfpacket = True
 
-        header = Packet.header_from_buffer(self._data_buffer)
-        packet_byte_count = header.packet_byte_count
-        channel_number = header.channel_number
-        sequence_number = header.sequence_number
+        header_view = uctypes.struct(uctypes.addressof(mv[:4]), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
+        packet_bytes = header_view.packet_bytes
+        channel = header_view.channel
+        sequence = header_view.sequence
 
-        self._rx_sequence_number[channel_number] = sequence_number
+        self._rx_sequence_number[channel] = sequence
 
         # Redundant check if the non-blocking logic worked, kept for robustness
-        if packet_byte_count == 0:
+        if packet_bytes == 0:
             raise PacketError("No packet available")
 
-        self._dbg("channel %d has %d bytes available" % (channel_number, packet_byte_count - 4))
+        self._dbg(r"channel {channel} has {packet_bytes - 4} bytes available")
 
-        if packet_byte_count > DATA_BUFFER_SIZE:
+        if packet_bytes > DATA_BUFFER_SIZE:
             # If the packet is too big, reallocate the buffer. This is normal.
-            self._data_buffer = bytearray(packet_byte_count)
+            self._data_buffer = bytearray(packet_bytes)
 
-        self._read_into(self._data_buffer, start=0, end=packet_byte_count)
-        # print("Packet: ", [hex(i) for i in self._data_buffer[0:packet_byte_count]])
+        self._cs.value(0)
+        sleep_us(1)
+        mv = memoryview(self._data_buffer)[0:packet_bytes]
+        self._spi.readinto(mv, 0x00)
+        self._cs.value(1)
 
         if halfpacket:
             raise PacketError("read partial packet")
@@ -218,7 +216,7 @@ class BNO08X_SPI(BNO08X):
         pack_into("<HBB", self._data_buffer, 0, write_length, channel, seq)
 
         mv = memoryview(self._data_buffer)
-        mv[4:4+data_length] = data
+        mv[4:4 + data_length] = data
 
         self._cs.value(0)
         sleep_us(1)
@@ -227,5 +225,3 @@ class BNO08X_SPI(BNO08X):
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
         return seq
-
-
