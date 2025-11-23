@@ -36,7 +36,7 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-TODO: BRC updating sensor values more efficiently - spi @ 3.2  ms 312Hz
+TODO: BRC updating sensor values more efficiently - spi @ 3.1  ms 322Hz
 
 TODO: I2C/UART _process_available_packets: if ticks_diff(ticks_ms(), start_time) > 1
 TODO: BRC fix UART mis-framing (with quaternions?)
@@ -1278,7 +1278,44 @@ class BNO08X:
         """
         # handle typical sensor reports first
         if 0x01 <= report_id <= 0x09:
-            sensor_data, accuracy, delay_us = _parse_sensor_report_data(report_bytes)
+            # uctypes-based parser for BNO08x sensor reports, sensor data starts at offset=4
+            # Parses 3-tuple vectors, 4-tuple quaternions, and 5-tuple ARVR rotation.
+            s = uctypes.struct(uctypes.addressof(report_bytes), _SENSOR_REPORT_LAYOUT, uctypes.LITTLE_ENDIAN)
+            scalar, count, _ = _AVAIL_SENSOR_REPORTS[report_id]
+
+            # Extract accuracy from byte2 low bits
+            accuracy = s.byte2 & 0x03
+
+            # Extract delay (14 bits)
+            delay_upper = (s.byte2 >> 2) & 0x3F
+            delay_raw = (delay_upper << 8) | s.byte3
+            delay_us = delay_raw * 100
+
+            # scale sensor data using uctypes INT16, likely e1 needs a different scalar Q-point
+            if count == 3:
+                sensor_data = (
+                    s.v1 * scalar,
+                    s.v2 * scalar,
+                    s.v3 * scalar,
+                )
+            elif count == 4:
+                sensor_data = (
+                    s.v1 * scalar,
+                    s.v2 * scalar,
+                    s.v3 * scalar,
+                    s.v4 * scalar,
+                )
+            elif count == 5:
+                sensor_data = (
+                    s.v1 * scalar,
+                    s.v2 * scalar,
+                    s.v3 * scalar,
+                    s.v4 * scalar,
+                    s.e1,
+                )
+            else:
+                raise ValueError(f"Unexpected tuple length {count}")
+
             # remove self._dbg from time critical operations
             # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
 
