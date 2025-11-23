@@ -68,8 +68,8 @@ Primary sensor reports:
         BNO_REPORT_STABILITY_CLASSIFIER
         BNO_REPORT_ACTIVITY_CLASSIFIER
 
-BNO Sensor documentation uses the words "ROTATION_VECTOR", and we honor that in several constants above. Most people refer
-to these as quaternions, which makes coding easier, so in this code we use bno.quaternion and enable it with
+BNO Sensor documentation uses the words "ROTATION_VECTOR", and we honor that in several constants above. 
+Most people refer to these as quaternions, which makes coding easier, so in this code we use bno.quaternion and enable it with
 "BNO_REPORT_ROTATION_VECTOR" and likewise use bno.game_quaternion and enable it with "BNO_REPORT_GAME_ROTATION_VECTOR".
 
 ## Getting the sensor results:
@@ -212,8 +212,8 @@ PS0 and PS1 are the host interface protocol selection pins, therefore UART can n
 
 ## Report Maximum Frequencioes
 
-Currently On Pico 2 W, the SPI interface can service 2ms reports is 3.1 ms (322Hz), I2C is slower #.#ms (xxxHz).  When you ask for
-reports at shorter period the reporting frequency slows. Try you own experiments and let me know what you find.
+Currently On Pico 2 W, the SPI interface can service 2ms reports is 3.1 ms (322Hz), I2C is slower 15.6ms (64Hz).  When you ask for
+reports at too short period the reporting frequency will slow. Try you own experiments and let me know what you find.
 
 | **Feature**             | **Max Frequency (Hz)** | **msec/Report** | **period we've seen**  |
 |-------------------------|------------------------|-----------------|------------------------|
