@@ -28,9 +28,9 @@ from struct import pack_into
 
 import uctypes
 from machine import Pin
-from utime import ticks_ms, sleep_ms, sleep_us
+from utime import ticks_ms, ticks_diff, sleep_ms, sleep_us
 
-from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE, _elapsed_sec
+from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
 
 _HEADER_STRUCT = {
     "packet_bytes": (uctypes.UINT16 | 0),
@@ -97,50 +97,34 @@ class BNO08X_SPI(BNO08X):
 
     def _wait_for_int(self):
         """
-        1.2.4.1: On the BNO085/BNO086, if the host fails to respond to the assertion of H_INTN within approximately 10 ms, the
-        BNO085/BNO086 will time out, de-assert H_INTN and retry the operation. Delays in responding to H_INTN cause
-        lost processing time on the BNO085/BNO086. Frequent delays will cause process starvation and some
-        calculations will not be completed. The result is that some outputs will have errors. To avoid this problem H_INTN
-        should be typically handled within 1/10 of the fastest sensor period.
-        Fastest sensor period is acceleration at 4ms
-
+        Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
+        This resolves the 10ms starvation issue caused by polling.
         """
         start_time = ticks_ms()
 
-        # SPI operation Requires wake_pin
-        # I2C & UARToperation reqires NO wake_pin (=None)
         if self._wake is not None and self._wake.value() == 1:
             self._wake_signal()
 
         if self._int.value() == 0:
+            self._data_available = True  # Ensure the flag is set if we missed the interrupt
             self._dbg("INT is active low (0) on entry.")
             return
 
-        self._dbg("Waiting for INT to go low (active)...")
-        while _elapsed_sec(start_time) < 3.0:
-            if self._int.value() == 0:
-                self._dbg(f"INT went active low after {_elapsed_sec(start_time):.3f}s")
+        while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec
+            if self._data_available:
+                self._data_available = False  # Clear the flag for the next event
                 return
-
-            if self._debug and ticks_ms() % 500 < 5:  # Log every ~0.5 seconds
-                self._dbg(f"INT value still high (1) at T={_elapsed_sec(start_time):.3f}s")
-
-            sleep_us(1)  # TODO How long?
-
-        self._dbg(f"Timeout (3.0s) reached. INT pin state: {self._int.value()}")
-        raise RuntimeError("Timeout waiting for INT to go low")
+            sleep_us(10)  # 10 us give 5.4ms loop 1ms give 5.4ms loop
+        raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
 
     def _read_header(self, wait=True):
         """Reads the first 4 bytes available as a header"""
-
         if wait:
             self._wait_for_int()
         else:
             # only attempt the SPI read if INT is LOW.
             if self._int.value() != 0:
-                self._dbg("Not waiting for INT. Pin is HIGH (1). Aborting read: No data ready.")
-                raise PacketError("INT pin high, no data.")
-            self._dbg("Not waiting for INT. Pin is LOW (0). Proceeding to read...")
+                raise PacketError("INT pin high, aborting read: No data ready.")
 
         self._cs.value(0)
         sleep_us(1)

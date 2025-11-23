@@ -36,7 +36,7 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-TODO: BRC updating sensor values more efficiently
+TODO: BRC updating sensor values more efficiently - spi @ 5.4ms 183Hz
 
 TODO: BRC figure out read wait, is this needed?
 
@@ -689,8 +689,8 @@ class BNO08X:
 
         self.reset_sensor()
         
-        # significant spi, i2c, or uart by now, if int_pin interrupt thenraise error
-        print(f"{self.prev_interrupt_us=} {self.last_interrupt_us=}")
+        # There has been significant commmunication and int_pin activity by this point,
+        # if No int_pin interrupt, then raise error
         if self.last_interrupt_us == 0:
             raise RuntimeError("No int_pin signals, check int_pin wiring")
         
