@@ -36,13 +36,11 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-TODO: BRC updating sensor values more efficiently: spi @ 3.1ms (322Hz), i2c at 15.6ms (64Hz) uart at ?.?ms (?Hz).
+TODO: BRC updating sensor values more efficiently: spi @ 3.1ms (322Hz), i2c at 4ms (250 Hz) uart at ?.?ms (?Hz).
 
-TODO: Apply spi optimizations to i2c
+TODO: check... I2C/UART _process_available_packets: if ticks_diff(ticks_ms(), start_time) > 1
 
-TODO: I2C/UART _process_available_packets: if ticks_diff(ticks_ms(), start_time) > 1
-
-TODO: apply spi optimizations to uart fix UART mis-framing (with quaternions?)
+TODO: apply spi optimizations to uart ?  fix UART mis-framing (with quaternions?)
 TODO: test UART with Reset & Interrupt pins
 
 TODO: retest CALIBRATION, expand beyond mag accuracy... also fix that it was only mag
