@@ -108,7 +108,7 @@ class BNO08X_SPI(BNO08X):
         start_time = ticks_ms()
 
         # SPI operation Requires wake_pin
-        # I2C & UARToperation reqires NO wake_pin (None)
+        # I2C & UARToperation reqires NO wake_pin (=None)
         if self._wake is not None and self._wake.value() == 1:
             self._wake_signal()
 
@@ -156,9 +156,7 @@ class BNO08X_SPI(BNO08X):
             if packet_length == 0xFFFF or packet_length == 0:
                 raise PacketError("No valid packet received despite INT being low")
 
-            self._dbg(f"Non-blocking read SUCCESS. Header length: {packet_length}. Pin state: {self._int.value()}")
-
-        self._dbg("")
+            # self._dbg(f"Non-blocking read SUCCESS. Header length: {packet_length}. Pin state: {self._int.value()}")
 
     def _read_packet(self, wait=True):
         try:
@@ -172,22 +170,15 @@ class BNO08X_SPI(BNO08X):
             raise
 
         halfpacket = False
-
         mv = memoryview(self._data_buffer)
-        if mv[1] & 0x80:
-            halfpacket = True
-
         header_view = uctypes.struct(uctypes.addressof(mv[:4]), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
         packet_bytes = header_view.packet_bytes
+        if packet_bytes & 0x8000:
+            halfpacket = True
         channel = header_view.channel
         sequence = header_view.sequence
 
         self._rx_sequence_number[channel] = sequence
-
-        # Redundant check if the non-blocking logic worked, kept for robustness
-        if packet_bytes == 0:
-            raise PacketError("No packet available")
-
         # self._dbg(f"channel {channel} has {packet_bytes - 4} bytes available")
 
         if packet_bytes > DATA_BUFFER_SIZE:
@@ -204,8 +195,6 @@ class BNO08X_SPI(BNO08X):
             raise PacketError("read partial packet")
 
         new_packet = Packet(self._data_buffer)
-        if self._debug:
-            print(new_packet)
         self._update_sequence_number(new_packet)
         return new_packet
 
@@ -224,4 +213,4 @@ class BNO08X_SPI(BNO08X):
         self._cs.value(1)
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
-        return seq
+        return
