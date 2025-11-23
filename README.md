@@ -7,17 +7,22 @@
 
 ## Library tested
 
-bno08x MicroPython driver for I2C, SPI, UART on MicroPython
-
-This library has been tested with BNO086 sensor. It should work with BNO080 and BNO085 sensors. 
-It has been tested with Raspberry Pico 2 W.
+bno08x MicroPython driver for I2C, SPI, UART on MicroPython. This is for the BNO086, BNO085, and BNO080. The BNO08x sensors have a variety of sensors that can provide data/results.
+Each of these are accessed individually and called reports.
 
 This driver is written to provide to respond to high-frequency reports (short period), and also provides 0.1 msec resolution 
 timestamps for each sensor report. Knowing IMU results together with timestamp of results is critical for many
-telemetry applications.  This driver requires that the int_pin be connect to the sensors to work and also provide accurate timestamps.
-The reset_pin is highly encouraged as you may have to do several soft resets to get sensor to respond.
-The report frequency will be limited by the interface chosen with SPI being about 5x faster than I2c.
-SPI is also ?x faster than UART. Chose the report rate and interface that meets your needs.
+telemetry applications.  
+
+This driver requires that the int_pin and reset_pin be connected to the sensors for operation.
+
+This library has been tested with BNO086 sensor on Raspberry Pico 2 W. 
+
+The report frequency will be limited by the interface chosen. 
+SPI is the fastest and SPI is 30% faster than I2c. 
+SPI avoids the bno08x's non-standard I2C clock stretching which occurs during fast operations or many reports.
+I2C Clock Stretching causes IO errors in these cases.
+SPI is also ?x faster than UART. Choose the report rate and interface that meets your needs.
 
 ## Setting up to use the Sensor
 
@@ -28,32 +33,34 @@ SPI is also ?x faster than UART. Chose the report rate and interface that meets 
     from bno08x import *
 
     # set up the  I2C bus
-    int_pin = Pin(14, Pin.IN, Pin.PULL_UP)
+    int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # BNO sensor (INT)
+    reset_pin = Pin(15, Pin.OUT)  # BNO sensor (RST)
+
     i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=400_000)
 
     # set up the BNO sensor on I2C
-    bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin)
+    bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin, reset_pin=reset_pin)
 
 Required for I2C (see SPI and UART below):
 - address : each BNO08x needs a separate address (0x4b or 0x4a, depending on solder bump).
 - int_pin : required for operation and also gives accurate sensor timestamps. Define a Pin object, not  number.
+- reset_pin : required for operation after sensor power up. It is a Pin object, not number
 
 Optional parameters:
 
-    bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=Pin(12), int_pin=Pin(13), debug=False)
+    bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin, reset_pin=reset_pin, debug=True)
 
 Optional for I2C:
-- reset_pin : recommended for reliable hardware reset, if not defined it uses soft reset. It is a Pin object, not number
-- debug : print very detailed logs, primarily for driver debug & development.
+- debug : prints very detailed logs, primarily for driver debug & development.
 
-The maximum clock frequency for i2c is 400_000 (~400kbs). PS0 (Wake_pin) and PS1 are used to select I2C, therefore I2C can not use wake pin.
-To use I2C, both PS0 and PS1 can not have solder blobs which means both are tied to ground.
+The maximum clock frequency for i2c is 400_000 (~400kbs). PS0 (wake_pin) and PS1 are used to select I2C.
+To use I2C, both PS0 and PS1 can not have solder blobs which means both are tied to ground. I2C can not use wake_pin.
 
 ## Enable the sensor reports
 
-Before getting sensor results, the reports must be enabled:
+Before getting sensor report, each specific report must be enabled.
 
-    bno.enable_feature(BNO_REPORT_ACCELEROMETER)  # for accelerometer
+    bno.enable_feature(BNO_REPORT_ACCELEROMETER)
     
 Primary sensor reports:
 
@@ -70,9 +77,10 @@ Primary sensor reports:
         BNO_REPORT_STABILITY_CLASSIFIER
         BNO_REPORT_ACTIVITY_CLASSIFIER
 
-BNO Sensor documentation uses the words "ROTATION_VECTOR", and we honor that in several constants above. 
-Most people refer to these as quaternions, which makes coding easier, so in this code we use bno.quaternion and enable it with
-"BNO_REPORT_ROTATION_VECTOR" and likewise use bno.game_quaternion and enable it with "BNO_REPORT_GAME_ROTATION_VECTOR".
+BNO08x sensor documentation uses the words "ROTATION_VECTOR", and we honor that in several of the constants above. 
+Most people refer to these as quaternions, which is easier to understand in code.
+In this library, we use bno.quaternion and enable it with "BNO_REPORT_ROTATION_VECTOR".
+Likewise, when bno.game_quaternion is used, please enable it with "BNO_REPORT_GAME_ROTATION_VECTOR".
 
 ## Getting the sensor results:
 
@@ -85,15 +93,15 @@ Roll, tilt, and yaw can be obtained easily from quaternion with:
     roll, tilt, yaw = bno.quaternion.euler
 
 The data and the metadata for each report can be accessed at the same time using ".full".
-In this way, the accuracy and the usec-accurate timestamp  of a particular report is returned at the same time.
+In this way, the accuracy and the usec-accurate timestamp of a particular report is returned at the same time.
 The timestamp_us is synchronized with the host's usec time. Understanding timestamps is recommended for
 high-frequency applications (>5Hz).
 
     accel_x, accel_y, accel_z, accuracy, timestamp_us = bno.acceleration.full
-    roll, tilt, yaw, accuracy, timestamp_us = bno.quaternion.euler_full   # note underscore
+    roll, tilt, yaw, accuracy, timestamp_us = bno.quaternion.euler_full   # note underscore in .euler_full
 
 Metadata on the accuracy and the usec-accurate timestamp can also be separately accessed. However, unless carefully
-designed in the user code, they may be from a different report.
+designed in the user code, they may be from a different report (.full is recommended).
 
     accuracy, timestamp_us = bno.acceleration.meta
 
@@ -101,7 +109,9 @@ If you are using quaternions for various processing and at a later time you want
 you can use the following:
 
     i, j, k, r = bno.quaternion
+
     # ...various quaternion processing
+
     roll, pitch, yaw = euler_conversion(i, j, k, r)
 
 **Examples of other sensor reports**
@@ -114,7 +124,6 @@ The examples directory shows the use of the following sensor reports. Each of th
     x, y, z = bno.magnetic              # magnetic 3-tuple of x,y,z float returned
     x, y, z = bno.gravity               # gravity vector 3-tuple of x,y,z float returned
     roll, pitch, yaw = bno.quaternion.euler     # rotation degree angle in Euler orientation 3-tuple of x,y,z float returned
-
 
     i, j, k, real = bno.quaternion              # rotation 4-tuple of i,j,k,real float returned
     i, j, k, real = bno.geomagnetic_quaternion  # rotation 4-tuple of i,j,k,real float returned
@@ -138,14 +147,12 @@ TODO FIX THIS **********************
 
 ## Option to Change Sensor Report Frequency
 
-The sensor report default frequencies are 10 to 20 Hz. The number of reports per second that the BNO08X can reliably
-deliver is dependent on the interface bandwidth and the number of reports that a BNO08X is asked to generate. Currently,
-on a Raspberry Pi Pico 2 W we can support reports with frequencies up to 125 Hz (8ms).
+The sensor report default frequencies are 10 to 20 Hz. The number of reports per second that the BNO08X can
+deliver is dependent the number of reports that a BNO08X is asked to generate. Currently,
+on a Raspberry Pi Pico 2 W with SPI we can support reports with frequencies over 320 Hz (3.1 ms) on some reports.
 
-I2C will definitely limit this frequency (est 10 to 50 Hz with a few reports). One should consider SPI for higher frequencies.
 Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
-Some sensor reports can be updated at 400 to 400 Hz on SPI (untested). If your code request faster than the report
-feature frequency specified, repeated values will be returned.
+If your code requests faster than the report feature frequency specified, repeated values will be returned.
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # enable accelerometer reports at 40 Hertz
 
@@ -159,41 +166,46 @@ Quaternions avoid this by providing a unique representation for every possible o
 - https://base.movella.com/s/article/Understanding-Gimbal-Lock-and-how-to-prevent-it?language=en_US
 - https://en.wikipedia.org/wiki/Gimbal_lock
 
-## I2C Issues with speed and data quality
+## I2C Issues with speed and communication errors
 
-Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stretching_** on the I2C. This can cause a variety of issues including report errors and the need to restart sensor. Clock stretching interferes with various chips (ex: RP2) in different ways. If you see sporadic results this may be part of the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
+Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stretching_** on the I2C.
+This causes a variety of issues including report errors and the need to restart sensor.
+Clock stretching interferes with various chips (ex: RP2) in different ways.
+If you see ETIMEDOUT, this is likely the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
+Some have had good results with software I2C (emulation). We do not know how this impacts performance.
 
 ## SPI Setup - for higher speed sensor reports
 
-Requirements to using Sparkfun BNO086 with SPI
-1. One must clear i2c jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
-2. One must have solder blob ONLY on SP1, must have Wake pin connect to a pin.
-3. UART must be set to baudrate=3_000_000
-
-In order to use SPI on most sensor boards instead of I2C you must often have to add ONE solder blob on PS1. 
+In order to use SPI on most sensor boards one must add ONE solder blob on PS1. 
 On the back side of Sparkfun BNO086 and Adafruit BNO085, one needs a solder blob to bridge PS1 which will set PS1 high for SPI operation. 
-The PS0 (Wake_pin) must be connected to a gpio (wake_pin), be careful not put a solder blog on PS0.
+The PS0 (Wake_pin) must be connected to a gpio (wake_pin), please be careful not put a solder blog on PS0.
 This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08X out of sleep for communication with the BNO08X.
+On the Sparkfun BNO086 when using SPI, one must clear i2c jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
+
+ SPI must be set to baudrate=3_000_000 (only)
 
     from machine import SPI, Pin
     from spi import BNO08X_SPI
     from bno08x import *
 
-    int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, enables BNO to signal when ready
-    reset_pin = Pin(15, Pin.OUT)  # Reset to signal BNO to reset
-    cs_pin = Pin(17, Pin.OUT)  # cs for SPI
-    wake_pin = Pin(20, Pin.OUT, value=1)  # Wakes BNO to enable INT response
+    int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # BNO sensor (INT)
+    reset_pin = Pin(15, Pin.OUT)  # BNO sensor (RST)
+    cs_pin = Pin(17, Pin.OUT)  # cs for SPI (CS)
+    wake_pin = Pin(20, Pin.OUT, value=1)  # BNO sensor (WAK)
 
     spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16), baudrate=3_000_000)
     print(spi)
 
-    bno = BNO08X_SPI(spi, cs_pin=cs_pin, int_pin=int_pin, reset_pin=reset_pin, wake_pin=wake_pin, debug=False)
+    bno = BNO08X_SPI(spi, cs_pin=cs_pin, int_pin=int_pin, reset_pin=reset_pin, wake_pin=wake_pin)
 
-Required for SPI
-- int_pin : Required by SPI for accurate sensor timestamps. Define a Pin object, not  number.
-- wake_pin : Required by SPI to operate correctly.
-Optional for SPI
-- reset_pin : used by SPI for hardware reset, if not defined uses soft reset. It is a Pin object, not number
+Required for SPI:
+- int_pin : required for operation and also gives accurate sensor timestamps. Define a Pin object, not  number.
+- reset_pin : required for operation after sensor power up. It is a Pin object, not number
+- wake_pin : required for SPI operation. 
+- cs_pin : required for SPI operation.
+
+Optional for SPI:
+- debug : prints very detailed logs, primarily for driver debug & development.
 
 ## UART Setup
 UART wires are in some sense opposite of i2c wires (double-check your wiring).
@@ -214,10 +226,17 @@ PS0 and PS1 are the host interface protocol selection pins, therefore UART can n
 1. must clear i2c jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
 2. must have solder blob ONLY on SP1, must NOT have Wake pin connect to a pin.
 
-## Report Maximum Frequencioes
+## Details on Report Frequencies
 
-Currently On Pico 2 W, the SPI interface can service 2ms reports is 3.1 ms (322Hz), I2C is slower 15.6ms (64Hz).  When you ask for
-reports at too short period the reporting frequency will slow. Try you own experiments and let me know what you find.
+Report frequencies should be enabled before requesting reports in the code.
+To convert from period in ms to Hz (1000000/period_ms).
+
+    bno.enable_feature(BNO_REPORT_ACCELEROMETER, 100)  # Enable accelerometer reports at 100 Hertz
+
+When the frequency of the sensor is set in enable_feature, it should be viewed as a suggestion to the sensor to operate at that frequency.
+If the sensor cannot operate at requested period, it may operate faster or slower (SH-2 datasheet 5.4.1 Rate Control).
+For example, we've seen a request of 100 Hz and have had the sensor report at 125Hz.
+With multiple reports we've also seen 20 Hz changed to 10 Hz.
 
 | **Feature**             | **Max Frequency (Hz)** | **msec/Report** | **period we've seen**  |
 |-------------------------|------------------------|-----------------|------------------------|
@@ -235,20 +254,22 @@ reports at too short period the reporting frequency will slow. Try you own exper
 | raw Accelerometer       |                        |                 | 32, 64, 96             |
 | (report default)        | 20                     | 50.0 ms         |                        |
 
-Report frequencies should be enabled before requesting reports. To convert from period in ms to Hz (1000000/period.)
+Currently On Pico 2 W, the SPI interface can almost service 2ms reports. 
+The fastest updates we've seen on SPI is 3.1 ms (322Hz), I2C is slower at 4.0ms (250Hz).  
+When one request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
+Try you own experiments and let me know what you find.
 
-    bno.enable_feature(BNO_REPORT_ACCELEROMETER, 100)  # Enable accelerometer reports at 100 Hertz
-
-When the frequency of the sensor is set in enable_feature, it should be viewed as a suggestion to operate at that interval.
-If the sensor cannot operate as requested, it may operate faster or slower (SH-2 datasheet 5.4.1 Rate Control).
-
-On can access the sensors report period for each with this function. Each sensor may be faster or slower in a single program.
+On can access the sensors actual report period as shown below.
+Because the sensor values are in usec (microseconds) they need to be converted to msec (milliseconds).
+The sensor may report frequency will vary slightly during the run.
 
     accelerometer_period_us = bno.report_period_us(BNO_REPORT_ACCELEROMETER)
     period_ms = accelerometer_period_us / 1000.0
     print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
-With a single feature, we've seen the above requested 100 Hz have the sensor report at 125Hz. With multiple featues we've also seen 20Hz changed to 10 Hz.
+There is also a print function (slow) that shows all enabled reports by printing to the console.
+
+    bno.print_report_period()
 
 ## Calibration of the Sensor
 
@@ -283,9 +304,3 @@ The CEVA BNO085 and BNO086 9-axis sensors are made by Ceva (https://www.ceva-ip.
 -https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf
 
 Bosch has a new 6-axis IMU BHI385 (announced June 2025) that can be paired with BMM350 3-axis Geomagnetic sensor.
-
-## Possible Future work
-
-In order to get higher frequency reports it may be necessary to implement this driver with two cores. My thought is the
-primary core (core 0) would be running the user program and the second core (core1) would be handling the report
-processing and the communications with the bno08x.
