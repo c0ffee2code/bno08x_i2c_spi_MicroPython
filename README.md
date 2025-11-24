@@ -21,6 +21,7 @@ SPI is also ?x faster than UART. Choose the report rate and interface that meets
 **Credits - thanks!**
 - 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X, Copyright (c) 2020 Bryan Siepert for Adafruit Industries
 - This code also inspired by feature and fixes written by dobodu
+- thanks in advance for any pull request contributions
 
 ## Setting up to use the Sensor
 
@@ -103,7 +104,7 @@ Using .full is recommended.
     accuracy, timestamp_us = bno.acceleration.meta
 
 If you are using quaternions for various processing and at a later time you want to convert to an euler angle (degrees),
-you can use the following conversion function which uses the common aerospace / robotics convention (XYZ rotation order (roll-pitch-yaw)).
+you can use the following conversion function which uses the common aerospace/robotics convention (XYZ rotation order: roll-pitch-yaw).
 
     i, j, k, r = bno.quaternion
 
@@ -149,8 +150,8 @@ You can request different frequecies and the BNO08X will pick the closest freque
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # enable accelerometer reports at 40 Hertz
 
-See the seletion below (__Details on Report Frequencies__) for more details.
-If your code requests faster than the report feature frequency specified, repeated values will be returned.
+See the seletion below (_Details on Report Frequencies_) for more details.
+If your code requests reports faster than the report feature frequency specified, repeated values will be returned.
 
 ## Euler angles, gimbal lock, and quaternions
 
@@ -163,15 +164,15 @@ Quaternions use several rotation around a single axis and an angle.
 - https://base.movella.com/s/article/Understanding-Gimbal-Lock-and-how-to-prevent-it?language=en_US
 - https://en.wikipedia.org/wiki/Gimbal_lock
 
-## I2C Issues with speed and communication errors
+## I2C Clock-stretch issues on BNO08x and communication errors
 
 Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stretching_** on the I2C.
-This causes a variety of issues including report errors and the need to restart sensor.
+This causes a variety of issues including report errors and the need to restart/reset the sensor.
 Clock stretching interferes with various chips (ex: RP2) in different ways.
 If you see ETIMEDOUT, this is likely the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
 Some have had good results with software I2C (emulation). We do not know how this impacts performance.
 
-## SPI Setup - for higher speed sensor reports (no clock stretch issues)
+## SPI Setup - for higher speed sensor reports (no clock-stretch issues)
 
 In order to use SPI on most sensor boards one must add ONE solder blob on PS1. 
 On the back side of Sparkfun BNO086 and Adafruit BNO085, one needs a solder blob to bridge PS1 which will set PS1 high for SPI operation. 
@@ -179,7 +180,7 @@ The PS0 (Wake_pin) must be connected to a gpio (wake_pin), please be careful not
 This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08X out of sleep for communication with the BNO08X.
 On the Sparkfun BNO086 when using SPI, one must clear i2c jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
 
- SPI must be set to baudrate=3_000_000 (only)
+ SPI must be set to baudrate=3_000_000 (only).
 
     from machine import SPI, Pin
     from spi import BNO08X_SPI
@@ -230,7 +231,7 @@ To convert from period in ms to Hz (1000000/period_ms).
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 100)  # Enable accelerometer reports at 100 Hertz
 
-When the frequency of the sensor is set in enable_feature, it should be viewed as a suggestion to the sensor to operate at that frequency.
+When the frequency of the sensor is set in enable_feature, it should be viewed as a "suggestion" to the sensor to operate at that frequency.
 If the sensor cannot operate at requested period, it may operate faster or slower (SH-2 datasheet 5.4.1 Rate Control).
 For example, we've seen a request of 100 Hz and have had the sensor report at 125Hz.
 With multiple reports we've also seen 20 Hz changed to 10 Hz.
@@ -255,17 +256,16 @@ There is also a print function (slow) that shows all enabled reports by printing
 
     bno.print_report_period()
 
-You can also access the values of report frequencies. This function returns the sensors native values in usec (microseconds),
-but you can easily convert them to msec (milliseconds). The actual sensor period will vary from the attempted period
-returned by this function.
+You can also access the values of each report period independently.
+This function returns the sensors report periods in the native values in usec (microseconds) which you can convert to msec (milliseconds).
+The actual sensor period will vary from the attempted period returned by this function.
 
     accelerometer_period_us = bno.report_period_us(BNO_REPORT_ACCELEROMETER)
     period_ms = accelerometer_period_us / 1000.0
     print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
 Currently On Pico 2 W, the SPI interface can almost service 2ms reports. 
-The fastest updates we've seen on SPI is 3.1 ms (322Hz), I2C is slower at 4.0ms (250Hz).  
-When one request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
+The fastest updates we've seen on SPI is 3.1 ms (322Hz), I2C is slower at 4.0ms (250Hz). When one requests report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
 Try you own experiments and let me know what you find.
 
 Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
@@ -279,15 +279,16 @@ background: https://www.youtube.com/watch?v=0rlvvYgmTvI&t=28s
     BNO_REPORT_RAW_GYROSCOPE
     BNO_REPORT_RAW_MAGNETOMETER
 
-The raw reports, which do not use sensor fusion calculations, are also implemented in this driver for acceleration,
-magnetic, and gyro sensors. It is not generally recommended to use these reports, and they require signficant math (careful
+The raw reports, which do not use sensor fusion calculations, can be accessed for acceleration,
+magnetic, and gyro sensors. It is not generally recommended to use these reports, because they require signficant coding (careful
 calibaration, Kalman filters, etc.). Please read all references below when attempting to use raw reports.
+
 In addition, there are other sensor reports possible with the bno08x sensors that this driver has not fully
-implemented. See code and references for details. The timestamps are not well-documented in Ceva documentation.
+implemented. See code source for details. The raw sensors timestamps are not well-documented in Ceva documentation.
 
 ## UART-RVC is NOT SUPPORTED by this driver (RVC, Robot Vacuum Cleaners)
 
-The BNO08X has a simplified UART interface for use on unmanned ground roving robot and robot vacuum cleaners (RVC).
+The BNO08X has a simplified UART-RVC interface for use on unmanned ground roving robot and robot vacuum cleaners (RVC).
 This is a very different protocol and not supported in my driver. Take a look at: https://github.com/rdagger/micropython-bno08x-rvc
 
 ## References
@@ -295,11 +296,8 @@ This is a very different protocol and not supported in my driver. Take a look at
 The CEVA BNO085 and BNO086 9-axis sensors are made by Ceva (https://www.ceva-ip.com). They are based on Bosch hardware but use Hillcrest Labs’ proprietary sensor fusion software. BNO086 is backwards compatible with BNO085 and both are pin-for-pin replacements for Bosch Sensortec’s discontinued BNO055 and BMF055 sensors.
 
 - https://www.ceva-ip.com/wp-content/uploads/BNO080_085-Product-Brief.pdf
-
 - https://www.ceva-ip.com/wp-content/uploads/BNO080_085-Datasheet.pdf
-
 - https://cdn.sparkfun.com/assets/4/d/9/3/8/SH-2-Reference-Manual-v1.2.pdf
-- 
--https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf
+- https://cdn.sparkfun.com/assets/7/6/9/3/c/Sensor-Hub-Transport-Protocol-v1.7.pdf
 
 Bosch has a new 6-axis IMU BHI385 (announced June 2025) that can be paired with BMM350 3-axis Geomagnetic sensor.
