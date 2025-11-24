@@ -18,8 +18,7 @@ SPI avoids the bno08x's non-standard I2C clock stretching which occurs during fa
 I2C Clock Stretching causes IO errors in these cases.
 SPI is also ?x faster than UART. Choose the report rate and interface that meets your needs.
 
-## Credits - thanks!
-
+**Credits - thanks!**
 - 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X, Copyright (c) 2020 Bryan Siepert for Adafruit Industries
 - This code also inspired by feature and fixes written by dobodu
 
@@ -48,6 +47,7 @@ Required for I2C (see SPI and UART below):
 Optional parameters:
 - debug : prints very detailed logs, primarily for driver debug & development.
 
+
     bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin, reset_pin=reset_pin, debug=True)
 
 The maximum clock frequency for i2c is 400_000 (~400kbs). PS0 (wake_pin) and PS1 are used to select I2C.
@@ -59,7 +59,7 @@ Before getting sensor report, each specific report must be enabled.
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER)
     
-Primary sensor reports:
+Primary sensor report constants:
 
         BNO_REPORT_ACCELEROMETER
         BNO_REPORT_GYROSCOPE
@@ -149,6 +149,7 @@ You can request different frequecies and the BNO08X will pick the closest freque
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # enable accelerometer reports at 40 Hertz
 
+See the seletion below (__Details on Report Frequencies__) for more details.
 If your code requests faster than the report feature frequency specified, repeated values will be returned.
 
 ## Euler angles, gimbal lock, and quaternions
@@ -156,7 +157,8 @@ If your code requests faster than the report feature frequency specified, repeat
 Euler angles have a problem with Gimbal Lock. With Euler angles, a loss of a degree of freedom occurs when two
 rotational axes align, which means certain orientations have multiple representations. 
 There was a famous example of this on Apollo 11.
-Quaternions avoid this by providing a unique representation for every possible orientation problem. Theu use several rotation around a single axis and an angle.
+Quaternions avoid this by providing a unique representation for every possible orientation problem.
+Quaternions use several rotation around a single axis and an angle.
 
 - https://base.movella.com/s/article/Understanding-Gimbal-Lock-and-how-to-prevent-it?language=en_US
 - https://en.wikipedia.org/wiki/Gimbal_lock
@@ -169,7 +171,7 @@ Clock stretching interferes with various chips (ex: RP2) in different ways.
 If you see ETIMEDOUT, this is likely the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
 Some have had good results with software I2C (emulation). We do not know how this impacts performance.
 
-## SPI Setup - for higher speed sensor reports
+## SPI Setup - for higher speed sensor reports (no clock stretch issues)
 
 In order to use SPI on most sensor boards one must add ONE solder blob on PS1. 
 On the back side of Sparkfun BNO086 and Adafruit BNO085, one needs a solder blob to bridge PS1 which will set PS1 high for SPI operation. 
