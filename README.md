@@ -1,12 +1,6 @@
 # bno08x-i2c-spi-micropython
 ## Micropython I2C SPI library BNO08X sensors for 9-axis fusion
 
-- 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X
-- Copyright (c) 2020 Bryan Siepert for Adafruit Industries
-- This code also inspired by feature and fixes written by dobodu
-
-## Library tested
-
 bno08x MicroPython driver for I2C, SPI, UART on MicroPython. This is for the BNO086, BNO085, and BNO080. The BNO08x sensors have a variety of sensors that can provide data/results.
 Each of these are accessed individually and called reports.
 
@@ -23,6 +17,12 @@ SPI is the fastest and SPI is 30% faster than I2c.
 SPI avoids the bno08x's non-standard I2C clock stretching which occurs during fast operations or many reports.
 I2C Clock Stretching causes IO errors in these cases.
 SPI is also ?x faster than UART. Choose the report rate and interface that meets your needs.
+
+## Credits - thanks!
+
+100% inspired by the original Adafruit CircuitPython I2C library for BNO08X
+- Copyright (c) 2020 Bryan Siepert for Adafruit Industries
+This code also inspired by feature and fixes written by dobodu
 
 ## Setting up to use the Sensor
 
