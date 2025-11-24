@@ -20,9 +20,8 @@ SPI is also ?x faster than UART. Choose the report rate and interface that meets
 
 ## Credits - thanks!
 
-100% inspired by the original Adafruit CircuitPython I2C library for BNO08X
-- Copyright (c) 2020 Bryan Siepert for Adafruit Industries
-This code also inspired by feature and fixes written by dobodu
+- 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X, Copyright (c) 2020 Bryan Siepert for Adafruit Industries
+- This code also inspired by feature and fixes written by dobodu
 
 ## Setting up to use the Sensor
 
@@ -47,11 +46,9 @@ Required for I2C (see SPI and UART below):
 - reset_pin : required for operation after sensor power up. It is a Pin object, not number
 
 Optional parameters:
+- debug : prints very detailed logs, primarily for driver debug & development.
 
     bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin, reset_pin=reset_pin, debug=True)
-
-Optional for I2C:
-- debug : prints very detailed logs, primarily for driver debug & development.
 
 The maximum clock frequency for i2c is 400_000 (~400kbs). PS0 (wake_pin) and PS1 are used to select I2C.
 To use I2C, both PS0 and PS1 can not have solder blobs which means both are tied to ground. I2C can not use wake_pin.
@@ -77,7 +74,7 @@ Primary sensor reports:
         BNO_REPORT_STABILITY_CLASSIFIER
         BNO_REPORT_ACTIVITY_CLASSIFIER
 
-BNO08x sensor documentation uses the words "ROTATION_VECTOR", and we honor that in several of the constants above. 
+BNO08x documentation uses the words "ROTATION_VECTOR", and we honor that in several of the constants above. 
 Most people refer to these as quaternions, which is easier to understand in code.
 In this library, we use bno.quaternion and enable it with "BNO_REPORT_ROTATION_VECTOR".
 Likewise, when bno.game_quaternion is used, please enable it with "BNO_REPORT_GAME_ROTATION_VECTOR".
@@ -88,31 +85,31 @@ Sensors values can be accessed with:
 
     accel_x, accel_y, accel_z = bno.acceleration
 
-Roll, tilt, and yaw can be obtained easily from quaternion with:
+Roll, tilt, and yaw are obtained using quaternion with the modifier euler:
 
     roll, tilt, yaw = bno.quaternion.euler
 
-The data and the metadata for each report can be accessed at the same time using ".full".
-In this way, the accuracy and the usec-accurate timestamp of a particular report is returned at the same time.
+The sensor data and metadata for each report can be accessed at the same time using ".full".
+In this way, the accuracy and the microsecond-accurate timestamp of a particular report is returned at the same time.
 The timestamp_us is synchronized with the host's usec time. Understanding timestamps is recommended for
 high-frequency applications (>5Hz).
 
     accel_x, accel_y, accel_z, accuracy, timestamp_us = bno.acceleration.full
     roll, tilt, yaw, accuracy, timestamp_us = bno.quaternion.euler_full   # note underscore in .euler_full
 
-Metadata on the accuracy and the usec-accurate timestamp can also be separately accessed. However, unless carefully
-designed in the user code, they may be from a different report (.full is recommended).
+The metadata (accuracy, timestamp) can be separately accessed, but due to timing of the calls they may be from a different report.
+Using .full is recommended.
 
     accuracy, timestamp_us = bno.acceleration.meta
 
 If you are using quaternions for various processing and at a later time you want to convert to an euler angle (degrees),
-you can use the following:
+you can use the following conversion function:
 
     i, j, k, r = bno.quaternion
 
     # ...various quaternion processing
 
-    roll, pitch, yaw = euler_conversion(i, j, k, r)
+    roll, pitch, yaw = euler_conversion(new_i, new_j, new_k, new_r)
 
 **Examples of other sensor reports**
 
@@ -147,14 +144,12 @@ TODO FIX THIS **********************
 
 ## Option to Change Sensor Report Frequency
 
-The sensor report default frequencies are 10 to 20 Hz. The number of reports per second that the BNO08X can
-deliver is dependent the number of reports that a BNO08X is asked to generate. Currently,
-on a Raspberry Pi Pico 2 W with SPI we can support reports with frequencies over 320 Hz (3.1 ms) on some reports.
-
-Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
-If your code requests faster than the report feature frequency specified, repeated values will be returned.
+The sensor report default frequencies are 10 to 20 Hz.
+You can request different frequecies and the BNO08X will pick the closest frequency it can provide.
 
     bno.enable_feature(BNO_REPORT_ACCELEROMETER, 40)  # enable accelerometer reports at 40 Hertz
+
+If your code requests faster than the report feature frequency specified, repeated values will be returned.
 
 ## Euler angles, gimbal lock, and quaternions
 
@@ -254,22 +249,24 @@ With multiple reports we've also seen 20 Hz changed to 10 Hz.
 | raw Accelerometer       |                        |                 | 32, 64, 96             |
 | (report default)        | 20                     | 50.0 ms         |                        |
 
-Currently On Pico 2 W, the SPI interface can almost service 2ms reports. 
-The fastest updates we've seen on SPI is 3.1 ms (322Hz), I2C is slower at 4.0ms (250Hz).  
-When one request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
-Try you own experiments and let me know what you find.
+There is also a print function (slow) that shows all enabled reports by printing to the console.
 
-On can access the sensors actual report period as shown below.
-Because the sensor values are in usec (microseconds) they need to be converted to msec (milliseconds).
-The sensor may report frequency will vary slightly during the run.
+    bno.print_report_period()
+
+You can also access the values of report frequencies. This function returns the sensors native values in usec (microseconds),
+but you can easily convert them to msec (milliseconds). The actual sensor period will vary from the attempted period
+returned by this function.
 
     accelerometer_period_us = bno.report_period_us(BNO_REPORT_ACCELEROMETER)
     period_ms = accelerometer_period_us / 1000.0
     print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
-There is also a print function (slow) that shows all enabled reports by printing to the console.
+Currently On Pico 2 W, the SPI interface can almost service 2ms reports. 
+The fastest updates we've seen on SPI is 3.1 ms (322Hz), I2C is slower at 4.0ms (250Hz).  
+When one request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
+Try you own experiments and let me know what you find.
 
-    bno.print_report_period()
+Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
 
 ## Calibration of the Sensor
 
