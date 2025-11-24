@@ -93,7 +93,7 @@ class BNO08X_SPI(BNO08X):
         if self._wake_pin is not None:
             self._dbg("WAKE Pulse for BNO08x (spi.py)")
             self._wake_pin.value(0)
-            sleep_us(500)  # 500us seems reliable
+            sleep_us(500)  # 500us seems reliable, over 200 usec required in datasheet
             self._wake_pin.value(1)
             sleep_ms(1)  # 1 ms works
 
