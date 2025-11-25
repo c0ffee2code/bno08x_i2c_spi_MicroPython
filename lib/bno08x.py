@@ -742,39 +742,6 @@ class BNO08X:
         except KeyError:
             raise RuntimeError("Magnetometer report not enabled, use enable_feature") from None
 
-    @property
-    def raw_acceleration(self):
-        """raw acceleration unscaled/uncalibrated from raw registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_ACCELEROMETER] = 0
-            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_ACCELEROMETER]
-            return SensorReading3(x, y, z, acc, ts)
-        except KeyError:
-            raise RuntimeError("raw acceleration report not enabled, use enable_feature") from None
-
-    @property
-    def raw_gyro(self):
-        """raw gyroscope unscaled/uncalibrated from raw registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_GYROSCOPE] = 0
-            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_GYROSCOPE]
-            return SensorReading3(x, y, z, acc, ts)
-        except KeyError:
-            raise RuntimeError("raw gyroscope report not enabled, use enable_feature") from None
-
-    @property
-    def raw_magnetic(self):
-        """raw magnetic unscaled/uncalibrated from raw registers"""
-        self._process_available_packets()
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_MAGNETOMETER] = 0
-            x, y, z, acc, ts = self._report_values[BNO_REPORT_RAW_MAGNETOMETER]
-            return SensorReading3(x, y, z, acc, ts)
-        except KeyError:
-            raise RuntimeError("raw magnetic report not enabled, use enable_feature") from None
-
     # 4-Tuple Sensor Reports + accuracy + timestamp
     @property
     def quaternion(self):
@@ -810,6 +777,44 @@ class BNO08X:
             return SensorReading4(i, j, k, r, acc, ts)
         except KeyError:
             raise RuntimeError("game quaternion report not enabled, use bno.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR)") from None
+        
+    # raw reports to not support .full
+    
+    @property
+    def raw_acceleration(self):
+        """raw acceleration unscaled/uncalibrated from raw registers"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_RAW_ACCELEROMETER] = 0
+            x, y, z, ts = self._report_values[BNO_REPORT_RAW_ACCELEROMETER]
+            return x, y, z, ts
+        except KeyError:
+            raise RuntimeError("raw acceleration report not enabled, use enable_feature") from None
+
+    @property
+    def raw_gyro(self):
+        """
+        raw gyroscope unscaled/uncalibrated from raw registers
+        Notice: this is the only sensor that report temperature in Celsius
+        """
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_RAW_GYROSCOPE] = 0
+            x, y, z, tempc, ts = self._report_values[BNO_REPORT_RAW_GYROSCOPE]
+            return x, y, z, tempc, ts
+        except KeyError:
+            raise RuntimeError("raw gyroscope report not enabled, use enable_feature") from None
+
+    @property
+    def raw_magnetic(self):
+        """raw magnetic unscaled/uncalibrated from raw registers"""
+        self._process_available_packets()
+        try:
+            self._unread_report_count[BNO_REPORT_RAW_MAGNETOMETER] = 0
+            x, y, z, ts = self._report_values[BNO_REPORT_RAW_MAGNETOMETER]
+            return x, y, z, ts
+        except KeyError:
+            raise RuntimeError("raw magnetic report not enabled, use enable_feature") from None
 
     # Other Sensor Reports
     @property
@@ -881,9 +886,10 @@ class BNO08X:
     def euler_conversion(i, j, k, r):
         """
         Converts quaternion values to Euler angles to degrees.
-        :param k: quaternion component value
-        :param j: quaternion component value
+        This uses the common aerospace/robotics convention (XYZ rotation order: roll-pitch-yaw).
         :param i: quaternion component value
+        :param j: quaternion component value
+        :param k: quaternion component value
         :param r: quaternion component value
         :return: roll, pitch, yaw component values in degrees
         """
@@ -893,8 +899,7 @@ class BNO08X:
         roll = degrees(atan2(t0, t1))
 
         t2 = 2.0 * (r * j - k * i)
-        t2 = 1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
+        t2 = max(-1.0, min(1.0, t2))
         tilt = degrees(asin(t2))
 
         t3 = 2.0 * (r * k + i * j)
@@ -1017,6 +1022,13 @@ class BNO08X:
         start_time = ticks_ms()
 
         while self._data_ready and processed_count < max_packets:
+            
+            if ticks_diff(ticks_ms(), start_time) > 1:
+                # commented out self._dbg in time critical loops
+                # self._dbg("1 ms Timeout in _process_available_packets")
+                # self._dbg(f"* {processed_count=}")
+                break
+            
             try:
                 new_packet = self._read_packet(wait=False)
             except PacketError:
@@ -1024,22 +1036,18 @@ class BNO08X:
                 sleep_us(100)
                 continue
 
-            if new_packet:
-                self._handle_packet(new_packet)
-                processed_count += 1
-                # commented out self._dbg in time critical loops
-                # self._dbg(f"Processed {processed_count} packet{'s' if processed_count > 1 else ''}")
-
-            # Safety timeout to avoid infinite loop if interrupt stuck
-            if ticks_diff(ticks_ms(), start_time) > 1:  # ms
-                self._dbg("Timeout in _process_available_packets")
+            if new_packet is None:
                 break
+
+            self._handle_packet(new_packet)
+            processed_count += 1
+            # commented out self._dbg in time critical loops
+            # self._dbg(f"Processed {processed_count} packet{'s' if processed_count > 1 else ''}")
+            # self._dbg(f"{new_packet=}")
 
         flag = processed_count > 0
         # commented out self._dbg in time critical loops
         # self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
-        # add back in print if helpful in debug
-        # print(f"proc_avail_packets: {self._unread_report_count}")
         return flag
 
 
@@ -1399,7 +1407,7 @@ class BNO08X:
             return
 
         except RuntimeError:
-            raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {feature_id}")
+            raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {hex(feature_id)}")
 
 
     def report_period_us(self, feature_id):
@@ -1413,10 +1421,13 @@ class BNO08X:
         Print out
         :return:
         """
-        print(f"Enabled Report Periods:")
+        print(f"Enabled Report Periods and Hz:")
         for feature_id in self._report_periods_dictionary_us.keys():
             period_ms = self.report_period_us(feature_id) / 1000.0
-            print(f"\t{feature_id}: {_REPORTS_DICTIONARY[feature_id]},\t{period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+            print(f"\t{_REPORTS_DICTIONARY[feature_id]}\t{period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+            # extended print for debugging
+            # print(f"\t{feature_id}: {_REPORTS_DICTIONARY[feature_id]},\t{period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
+
 
     def set_orientation(self, quaternion):
         return  # Procedure to be completed and corrected
@@ -1550,7 +1561,7 @@ class BNO08X:
         if self._wake_pin is not None:
             self._dbg("WAKE pulse to ensure BNO08x is out of sleep")
             self._wake_pin.value(0)
-            sleep_ms(2)  # lower than 1ms doesn't seem to work
+            sleep_ms(2)  # over 200 usec required in datasheet
             self._wake_pin.value(1)
             sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
 
