@@ -30,15 +30,17 @@ bno.enable_feature(BNO_REPORT_GYROSCOPE, 5)
 bno.print_report_period()
 print("\nBNO08x sensors enabled")
 
-GOOD_SECONDS = 3
+GOOD_SECONDS = 5
 start_good = None
 calibration_good = False
 status = ""
 
-print(f"\nCalibration: continues for {GOOD_SECONDS} secs of \"Medium Accuracy\" to \"High Accuracy\"")
+# Begin calibration
 bno.begin_calibration
+# Wait sensor to be ready to calibrate
 bno.calibration_status
 
+print(f"\nCalibration: Continue for {GOOD_SECONDS} secs of \"Medium Accuracy\" to \"High Accuracy\"")
 while True:
     sleep(0.2)
 
@@ -62,7 +64,6 @@ while True:
             print(f"\nCalibration now good on all sensors. Start {GOOD_SECONDS}-second timer...\n")
         else:
             elapsed = ticks_diff(ticks_ms(), start_good) / 1000.0
-            # Exit if 3 seconds of all good calibration
             if elapsed >= GOOD_SECONDS:
                 print(f"\n*** Calibration stable for {GOOD_SECONDS} secs")
                 break  

@@ -135,7 +135,7 @@ The following functions can be used to tare and manually calibrate the sensor:
     bno.tare  # tare the sensor
 
     bno.begin_calibration 
-    bno.calibration_status
+    bno.calibration_status  # wait for sensor to be ready to calibrate
     # loop to test acceleration, magnetic, gyro  - see examples/test_calibration.py
     bno.save_calibration_data
 

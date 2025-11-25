@@ -625,8 +625,7 @@ class BNO08X:
 
         self._dcd_saved_at: float = -1
         self._me_calibration_started_at: float = -1.0
-        self._calibration_complete = False
-        self._magnetometer_accuracy = 0
+        self._calibration_started = False
         self._wait_for_initialize = True
         self._data_available = False
         self._id_read = False
@@ -924,16 +923,16 @@ class BNO08X:
                 0, 0, 0,  # reserved
             ]
         )
-        self._calibration_complete = False
+        self._calibration_started = False
         return
 
     @property
     def calibration_status(self) -> int:
         """
-        Send request for status command, 
+        Wait till calibration read, Send request for status command, wait for response.
         """
         self._send_me_command([ 0, 0, 0, _ME_GET_CAL, 0, 0, 0, 0, 0,])
-        return 
+        return self._calibration_started
 
     def _send_me_command(self, me_command) -> None:
         start_time = ticks_ms()
@@ -1206,11 +1205,11 @@ class BNO08X:
 
         if command == _ME_CALIBRATE and cal_status == 0:
             self._me_calibration_started_at = ticks_ms()
-            self._dbg("Calibration success at {ticks_ms()=}")
-            print(f"Calibration success at {ticks_ms()=}")
+            self._calibration_started = True
+            self._dbg("eady to start calibration at {ticks_ms()=}")
 
         if command == _SAVE_DCD:
-            self._dbg(f"_handle_command_response: DCD Save response detected. Status is {cal_status}")
+            self._dbg(f"DCD Save calibration sucess. Status is {cal_status}")
             if cal_status == _COMMAND_STATUS_SUCCESS:
                 self._dcd_saved_at = ticks_ms()
             else:
