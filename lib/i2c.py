@@ -75,7 +75,8 @@ class BNO08X_I2C(BNO08X):
         start_time = ticks_ms()
 
         if self._int.value() == 0 and self._data_ready:
-            self._dbg("_wait_for_int: INT is active low (0) on entry and _data_ready")
+            # self._dbg commented out in time critical code
+            # self._dbg("_wait_for_int: INT is active low (0) on entry and _data_ready")
             return
 
         while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec
@@ -105,6 +106,9 @@ class BNO08X_I2C(BNO08X):
         return self._tx_sequence_number[channel]
 
     def _read_packet(self, wait=None):
+        
+        # Treat wait=None or False as non-blocking
+        wait = bool(wait)
         if wait:
             self._wait_for_int()
 
@@ -112,30 +116,42 @@ class BNO08X_I2C(BNO08X):
         while header_read_attempt < 2:
             header_read_attempt += 1
             header_mv = memoryview(self._data_buffer)[:4]
+
             try:
                 self._i2c.readfrom_into(self._bno_i2c_addr, header_mv)
-            except OSError:
-                return None  # Handle rate I2C read failure
-
+            except OSError as e:
+                if e.args[0] == 110:  # ETIMEDOUT
+                    if not wait:
+                        return None 
+                # Catch rare I2C read failures that are not timeouts.
+                raise
+            
             header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
             packet_bytes = header_view.packet_bytes
-
+            
             if packet_bytes > len(self._data_buffer):
                 self._data_buffer = bytearray(packet_bytes)
                 continue
             break
 
         if packet_bytes == 0:
-            return None
+            return None     
+        
         if packet_bytes < 4:
-            raise PacketError(f"Invalid packet length: {packet_bytes}")
+            raise PacketError(f" _read_packet Invalid packet length: {packet_bytes}")
 
         channel = header_view.channel
         sequence = header_view.sequence
         self._rx_sequence_number[channel] = sequence
 
         mv = memoryview(self._data_buffer)[:packet_bytes]
-        self._i2c.readfrom_into(self._bno_i2c_addr, mv)
+        
+        try:
+            self._i2c.readfrom_into(self._bno_i2c_addr, mv)
+        except OSError as e:
+            if e.args[0] == 110: # ETIMEDOUT
+                return None
+            raise
 
         new_packet = Packet(self._data_buffer[:packet_bytes])
         self._update_sequence_number(new_packet)
