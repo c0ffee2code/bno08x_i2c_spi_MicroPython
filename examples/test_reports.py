@@ -7,11 +7,9 @@
 
 from time import sleep
 
-from i2c import BNO08X_I2C
 from bno08x import *
-
+from i2c import BNO08X_I2C
 from machine import I2C, Pin
-from utime import ticks_ms, sleep_us
 
 int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # BNO sensor (INT)
 reset_pin = Pin(15, Pin.OUT)  # BNO sensor (RST)
@@ -34,7 +32,7 @@ bno.print_report_period()
 print("\nBNO08x sensors enabled")
 
 while True:
-    sleep (.25)
+    sleep(.25)
     accel_x, accel_y, accel_z, acc, ts_us = bno.acceleration.full
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
 
