@@ -642,8 +642,6 @@ class BNO08X:
         self._rx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
         self._tx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
 
-        self._two_ended_sequence_numbers: dict[int, int] = {}
-
         self._dcd_saved_at: float = -1
         self._me_calibration_started_at: float = -1.0
         self._calibration_started = False
@@ -1047,11 +1045,10 @@ class BNO08X:
         _insert_command_request_report(
             me_type,
             self._command_buffer,
-            self._get_report_seq_id(_COMMAND_REQUEST),
+            self._tx_sequence_number[_BNO_CHANNEL_CONTROL],
             me_command,
         )
         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
-        self._increment_report_seq(_COMMAND_REQUEST)
 
         # change timeout to checking flag for ME Calbiration Response 6.4.6.3 SH-2
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
@@ -1066,10 +1063,9 @@ class BNO08X:
         _insert_command_request_report(
             _SAVE_DCD_COMMAND,
             local_buffer,
-            self._get_report_seq_id(_COMMAND_REQUEST),
+            self._tx_sequence_number[_BNO_CHANNEL_CONTROL],
         )
         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
-        self._increment_report_seq(_COMMAND_REQUEST)
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
             self._process_available_packets()
             if self._dcd_saved_at > start_time:
@@ -1574,10 +1570,6 @@ class BNO08X:
 
         raise RuntimeError("_check_id: Timeout waiting for valid Product ID response")
 
-    def _dbg(self, *args, **kwargs) -> None:
-        if self._debug:
-            print("DBG::\t\t", *args, **kwargs)
-
     def _hard_reset(self) -> None:
         """Hardware reset the sensor to an initial unconfigured state"""
         if not self._reset_pin:
@@ -1637,7 +1629,7 @@ class BNO08X:
             self._wake_pin.value(0)
             sleep_ms(2)  # over 200 usec required in datasheet
             self._wake_pin.value(1)
-            sleep_ms(10)  # 1 ms works, 1 ms sometimes fails
+            sleep_ms(10)  # 10 ms works, 1 ms sometimes fails
 
     def _send_packet(self, channel, data):
         raise RuntimeError("_send_packet Not implemented in bno08x.py, supplanted by I2C or SPI subclass")
@@ -1645,13 +1637,9 @@ class BNO08X:
     def _read_packet(self, wait):
         raise RuntimeError("_read_packet Not implemented in bno08x.py, supplanted by I2C or SPI subclass")
 
-    # TODO change these to using self._tx_sequence_number, likely better to put into methods that use them
-    def _increment_report_seq(self, report_id: int) -> None:
-        current = self._two_ended_sequence_numbers.get(report_id, 0)
-        self._two_ended_sequence_numbers[report_id] = (current + 1) % 256
-
-    def _get_report_seq_id(self, report_id: int) -> int:
-        return self._two_ended_sequence_numbers.get(report_id, 0)
+    def _dbg(self, *args, **kwargs) -> None:
+        if self._debug:
+            print("DBG::\t\t", *args, **kwargs)
 
     # TODO add to I2C and UART
     @property
