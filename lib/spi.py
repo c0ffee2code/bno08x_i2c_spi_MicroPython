@@ -87,14 +87,6 @@ class BNO08X_SPI(BNO08X):
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
 
-    def _wake_signal(self):
-        # UART operation reqires wake_pin is None
-        if self._wake_pin is not None:
-            self._dbg("WAKE Pulse for BNO08x (spi.py)")
-            self._wake_pin.value(0)
-            sleep_us(500)  # 500us seems reliable, over 200 usec required in datasheet
-            self._wake_pin.value(1)
-            sleep_ms(1)  # 1 ms works
 
     def _wait_for_int(self):
         """

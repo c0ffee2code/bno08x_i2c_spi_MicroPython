@@ -1048,6 +1048,7 @@ class BNO08X:
             self._tx_sequence_number[_BNO_CHANNEL_CONTROL],
             me_command,
         )
+        self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
 
         # change timeout to checking flag for ME Calbiration Response 6.4.6.3 SH-2
@@ -1065,6 +1066,7 @@ class BNO08X:
             local_buffer,
             self._tx_sequence_number[_BNO_CHANNEL_CONTROL],
         )
+        self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, local_buffer)
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
             self._process_available_packets()
@@ -1471,7 +1473,6 @@ class BNO08X:
             self.enable_feature(feature_dependency, DEFAULT_REPORT_FREQ[feature_dependency])
 
         self._wake_signal()
-
         self._send_packet(_BNO_CHANNEL_CONTROL, set_feature_report)
 
         try:
@@ -1514,6 +1515,7 @@ class BNO08X:
                 set_orientation[3] = BNO_CONF_SYSTEM_ORIENTATION & 0xFF,  # FRS Type LSB
                 set_orientation[4] = BNO_CONF_SYSTEM_ORIENTATION >> 80,  # FRS Type MSB
 
+                self._wake_signal()
                 self._send_packet(BNO_CHANNEL_CONTROL, set_orientation)
 
                 set_orientation[0] = FRS_WRITE_DATA
@@ -1534,6 +1536,7 @@ class BNO08X:
                 set_orientation[15] = 0,  # Offset MSB
                 set_orientation[16] = ORENT_QZ & 0xFF,  # Data2 LSB
                 set_orientation[17] = ORENT_QZ >> 8,  # Data2 MSB
+                self._wake_signal()
                 self._send_packet(BNO_CHANNEL_CONTROL, set_orientation)
                 """
         return  # Procedure to be completed and corrected
@@ -1551,6 +1554,7 @@ class BNO08X:
         data = bytearray(2)
         data[0] = _SHTP_REPORT_PRODUCT_ID_REQUEST
         data[1] = 0
+        self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, data)
 
         start_time = ticks_ms()
@@ -1592,6 +1596,7 @@ class BNO08X:
         """
         self._dbg(f"*** Soft Reset, Channel={BNO_CHANNEL_EXE} command={_BNO08X_CMD_RESET}, starting...")
         reset_payload = bytearray([_BNO08X_CMD_RESET])
+        self._wake_signal()
         self._send_packet(BNO_CHANNEL_EXE, reset_payload)
         sleep_ms(500)  # seems to be best with 500ms
         start_time = ticks_ms()
@@ -1623,11 +1628,11 @@ class BNO08X:
         self._dbg("End Soft RESET in bno08x.py")
 
     def _wake_signal(self):
-        # UART operation reqires wake_pin is None
+        """ wake can only be used on spi interface, fast return if i2c or uart """
         if self._wake_pin is not None:
             self._dbg("WAKE pulse to ensure BNO08x is out of sleep")
             self._wake_pin.value(0)
-            sleep_ms(2)  # over 200 usec required in datasheet
+            sleep_us(500)  # 500us seems reliable, over 200 usec required in datasheet
             self._wake_pin.value(1)
             sleep_ms(10)  # 10 ms works, 1 ms sometimes fails
 
