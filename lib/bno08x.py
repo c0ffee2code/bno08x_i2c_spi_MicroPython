@@ -149,6 +149,8 @@ BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR = const(0x28)
 BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR = const(0x29)
 BNO_REPORT_GYRO_INTEGRATED_ROTATION_VECTOR = const(0x2A)
 BNO_REPORT_MOTION_REQUEST = const(0x2B)
+BNO_REPORT_OPTICAL_FLOW = const(0x2c)
+BNO_REPORT_DEAD_RECKONING = const(0x2d)
 
 _REPORTS_DICTIONARY = {
     0x01: "ACCELEROMETER",
@@ -322,9 +324,9 @@ _AVAIL_SENSOR_REPORTS = {
     BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR: (_Q_POINT_14_SCALAR, 5, 14),  # 0x28, note est acc QPoint 12 ?
     BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR: (_Q_POINT_14_SCALAR, 4, 12),  # 0x29
     BNO_REPORT_GYRO_INTEGRATED_ROTATION_VECTOR: (_Q_POINT_14_SCALAR, 4, 14),  # #2a
-    #     BNO_REPORT_MOTION_REQUEST: (1, 1, 6),  # Motion Request send to host periodically? 0x2b
-    #     0x2c: (1 ,1, 24), # optical flow 0x2c
-    #     0x2d: (1 ,1, 60), # dead reckoning pose 0x2d
+    #     BNO_REPORT_MOTION_REQUEST: (1, 1, 6),  # sent to host periodically? 0x2b
+    #     BNO_REPORT_OPTICAL_FLOW: (1 ,1, 24),  #  0x2c
+    #     BNO_REPORT_DEAD_RECKONING: (1 ,1, 60), #  0x2d
 }
 
 _TARE_BASIS_ENCODES = {
@@ -419,15 +421,6 @@ def _elapsed_sec(start_time):
 
 
 ############ COMMAND PARSING ###########################
-def _parse_command_response(report_bytes: bytearray):
-    # CMD response report:
-    # 5 bytes: Report ID = 0xF1, Sequence number, Command, Command sequence , Response sequence
-    # 11 bytes: R0-10 A set of response values for each command.
-    report_body = unpack_from("<BBBBB", report_bytes)
-    response_values = unpack_from("<BBBBBBBBBBB", report_bytes, 5)
-    return report_body, response_values
-
-
 def _insert_command_request_report(
         command: int,
         buffer: bytearray,
@@ -1173,24 +1166,6 @@ class BNO08X:
         # self._dbg(f"_process_available_packets done, {processed_count} packets processed - {flag}")
         return flag
 
-    def _wait_for_packet_type(self, channel, timeout=3.0):
-        """
-        Wait for a packet from the specified channel.
-        Returns the first valid packet from that channel.
-        """
-        start_time = ticks_ms()
-        while _elapsed_sec(start_time) < timeout:
-            try:
-                packet = self._read_packet(wait=True)
-            except PacketError:
-                sleep_ms(10)
-                continue
-
-            if packet.header.channel_number == channel:
-                return packet
-
-        raise RuntimeError(f"Timeout waiting for packet on channel {channel}")
-
     def _wait_for_packet(self, channel, report_id=None, timeout=0.5):
         """
         Polls the BNO08x for a specific packet response up to a timeout.
@@ -1235,7 +1210,7 @@ class BNO08X:
         """
         if self._in_handle:
             return
-        
+
         self._in_handle = True
         data_view = memoryview(packet.data)
         data_length = len(packet.data)
@@ -1247,19 +1222,19 @@ class BNO08X:
             while next_byte_index < data_length:
                 report_id = data_view[next_byte_index]
 
-                # Look up required byte count
-                if report_id < 0xF0:
+                # Look up required byte count for each Report type, only enabled ones defined, others commented out
+                if report_id <= 0x2d:  # highest in SH-2 reference, many unimplemented
                     try:
                         required_bytes = _AVAIL_SENSOR_REPORTS[report_id][2]
                     except:
-                        # TODO re-do this after debug, don't like skipping below
                         self._dbg(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
                         self._dbg(f"INVALID REPORT ID {next_byte_index=}, next 6 bytes follows:")
-                        debug_view = data_view[next_byte_index: next_byte_index + 6]
+                        debug_view = packet.data[next_byte_index: next_byte_index + 6]
                         self._dbg(f"{debug_view=}")
+
+                        # todo remove after debut, con't like skipping
                         print(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
                         print(f"INVALID REPORT ID {next_byte_index=}, next 6 bytes follows:")
-                        debug_view = data_view[next_byte_index: next_byte_index + 6]
                         print(f"{debug_view=}")
                         raise NotImplementedError(f"Un-implemented Report ({hex(report_id)=}) not supported yet.")
                 else:
@@ -1338,7 +1313,7 @@ class BNO08X:
 
             # only first Product ID Response has reset cause, reset_pin should reset_cause=4
             if not self._product_id_received:
-                if reset_cause != 4: 
+                if reset_cause != 4:
                     self._reset_mismatch = True
                     self._dbg(f"Expected 4 for Reset Cause with reset_pin, got {reset_cause}")
             self._product_id_received = True
@@ -1586,31 +1561,42 @@ class BNO08X:
         return  # Procedure to be completed and corrected
 
     def _check_id(self):
-        """ Ensure the BNO08X product ID is read. Handles multiple 0xF8 responses in a packet. """
+        """
+        Ensures the BNO08X product ID is read by polling and processing all incoming packets.
+        Send Product ID request then process packets until Produce ID response (0xf8) received.
+        first 0xf8 indicates reset success and last reset cause. Total of 4 0xf8 is normal.
+        """
         self._dbg("********** Check ID **********")
         if getattr(self, "_product_id_received", False):
             return True
 
-        # Send Product ID request
         data = bytearray(2)
         data[0] = _SHTP_REPORT_PRODUCT_ID_REQUEST
         data[1] = 0
         self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, data)
 
+        # Process ALL packets until 0xF8 is found, ex: Timestamp, Errors, and Command Responses.
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < 3.0:
+            # Check if new data is available without blocking
+            if not self._data_ready:
+                sleep_ms(10)
+                continue
+
             try:
-                packet = self._wait_for_packet_type(_BNO_CHANNEL_CONTROL)
-                # Handle all reports in the packet
+                packet = self._read_packet(wait=False) 
                 self._handle_packet(packet)
 
-                # Check if any 0xF8 was processed, only the first shows
+                # Return on success the packet set the flag for the Product ID (0xF8)
                 if getattr(self, "_product_id_received", False):
-                    return True
-            except RuntimeError:
+                    self._dbg("Product ID successfully received and processed.")
+                    return True       
+            except RuntimeError as e:
+                self._dbg(f"Read error during ID check: {e}")
                 pass
             except PacketError:
+                # Expected if a partial/corrupt packet is read
                 pass
 
         raise RuntimeError("_check_id: Timeout waiting for valid Product ID response")
