@@ -64,7 +64,17 @@ class BNO08X_I2C(BNO08X):
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"Reset (RST) pin must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
+        
+        try:
+            self._i2c.readfrom(self._bno_i2c_addr, 1) # test if i2c devide
 
+        except OSError as e:
+            if e.errno in (errno.ENODEV, errno.EIO, OSError):
+                raise RuntimeError(
+                    f"No I2C device found at address {hex(self._bno_i2c_addr)}"
+                ) from e
+            raise
+    
         # give the parent constructor (BNO08X.__init__), the right values from BNO08X_I2C
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
