@@ -83,6 +83,15 @@ class BNO08X_SPI(BNO08X):
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
+        
+        # test if spi present
+        self._cs.value(0)
+        try:
+            resp = self._spi.read(4)     # read 4 bytes while clocking dummy data
+        finally:
+            self._cs.value(1)
+        if resp == b'\xFF\xFF\xFF\xFF': # real BNO08X will not return 0xFFFFFFFF on all bytes
+            raise RuntimeError("No SPI device detected")
 
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
