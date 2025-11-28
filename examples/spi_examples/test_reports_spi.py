@@ -43,22 +43,17 @@ while True:
 
     print(f"\nsystem timestamp {ticks_ms()=}")
 
-    accel_x, accel_y, accel_z, acc, ts_us = bno.acceleration.full
+    accel_x, accel_y, accel_z = bno.acceleration
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
-    print(f"Acceleration: accuracy={acc}, ms_timestamp={int(ts_us / 1000)}")
 
-    mag_x, mag_y, mag_z, acc, ts_us = bno.magnetic.full
+    mag_x, mag_y, mag_z = bno.magnetic
     print(f"Magnetometer X: {mag_x:+.3f}  Y: {mag_y:+.3f}  Z: {mag_z:+.3f}  uT ms")
-    print(f"Magnetometer: accuracy={acc}, ms_timestamp={int(ts_us / 1000)}")
 
-    gyro_x, gyro_y, gyro_z, acc, ts_us = bno.gyro.full
+    gyro_x, gyro_y, gyro_z = bno.gyro
     print(f"Gyroscope    X: {gyro_x:+.3f}  Y: {gyro_y:+.3f}  Z: {gyro_z:+.3f}  rads/s")
-    print(f"Gyroscope: accuracy={acc}, ms_timestamp={int(ts_us / 1000)}")
 
-    quat_i, quat_j, quat_k, quat_real, acc, ts_us = bno.quaternion.full
+    quat_i, quat_j, quat_k, quat_real = bno.quaternion
     print(f"Quaternion   I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
-    print(f"Quaternion: accuracy={acc}, ms_timestamp={int(ts_us / 1000)}")
 
-    roll, pitch, yaw, acc, ts_us = bno.quaternion.euler_full
+    roll, pitch, yaw = bno.quaternion.euler
     print(f"Euler Angle: Roll {roll:+.3f}°  Pitch: {pitch:+.3f}°  Yaw: {yaw:+.3f}°  degrees")
-    print(f"Euler Angle: accuracy={acc}, ms_timestamp={int(ts_us / 1000)}")
