@@ -52,7 +52,9 @@ class BNO08X_SPI(BNO08X):
     """
 
     def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, baudrate=1_000_000, debug=False):
-
+        if spi_bus is None:
+            raise RuntimeError("SPI bus object (spi_bus) must be provided for BNO08X_SPI operation.")
+        
         # BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
         self._spi = spi_bus
         self._spi.init(baudrate=baudrate, polarity=1, phase=1)
@@ -84,15 +86,6 @@ class BNO08X_SPI(BNO08X):
             raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
         
-        # test if spi present
-        self._cs.value(0)
-        try:
-            resp = self._spi.read(4)     # read 4 bytes while clocking dummy data
-        finally:
-            self._cs.value(1)
-        if resp == b'\xFF\xFF\xFF\xFF': # real BNO08X will not return 0xFFFFFFFF on all bytes
-            raise RuntimeError("No SPI device detected on CS pin")
-
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
 
