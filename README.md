@@ -87,16 +87,19 @@ Roll, tilt, and yaw are obtained using quaternion with the modifier euler:
 
 The sensor data and metadata for each report can be accessed at the same time using ".full".
 In this way, the accuracy and the microsecond-accurate timestamp of a particular report is returned at the same time.
-The timestamp_us is synchronized with the host's usec time. Understanding timestamps is recommended for
-high-frequency applications (>5Hz).
+The timestamp_ms is milliseconds since sensor startup. 
+You can calculate the millisecond difference between ticks_ms() and the bno start time by using bno.bno_start_diff.
+Understanding timestamps is recommended for high-frequency applications (>5Hz).
 
-    accel_x, accel_y, accel_z, accuracy, timestamp_us = bno.acceleration.full
-    roll, tilt, yaw, accuracy, timestamp_us = bno.quaternion.euler_full   # note underscore in .euler_full
+    accel_x, accel_y, accel_z, accuracy, timestamp_ms = bno.acceleration.full
+    roll, tilt, yaw, accuracy, timestamp_ms = bno.quaternion.euler_full   # note underscore in .euler_full
+    ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
+    print(f"milliseconds from bno start: {ms_since_sensor_start} msec")
 
 The metadata (accuracy, timestamp) can be separately accessed, but due to timing of the calls they may be from a different report.
 Using .full is recommended.
 
-    accuracy, timestamp_us = bno.acceleration.meta
+    accuracy, timestamp_ms = bno.acceleration.meta
 
 If you are using quaternions for various processing and at a later time you want to convert to an euler angle (degrees),
 you can use the following conversion function which uses the common aerospace/robotics convention (XYZ rotation order: roll-pitch-yaw).

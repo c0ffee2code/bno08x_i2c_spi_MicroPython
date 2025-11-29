@@ -29,6 +29,12 @@ Implementation Notes
 
 Using interrupt pin on all sensor types so can accuractly get timestamp of sensor readings
 
+Timing of sensor reports:
+* first interrupt defines sensor epoch, all sensor report timestamps (ms, microseonds)
+  are relative to this first interrupt.
+* self._sensor_epoch_ms starts at 0.0 ms at first interrupt.
+* self._epoch_start_ms was the host ticks ms at first interrupt.
+
 Delay
 1. When the timebase reference report is provided with individual sensor report
    it will likely have a delay of zero.
@@ -37,7 +43,7 @@ Delay
    are used to calculate the sensor sample's actual timestamp.
 
 Cuurrent sensor update periods:
-- spi:   3.0ms (333 Hz)
+- spi:   2.9ms (333 Hz)
 - i2c:   3.8ms (263 Hz)
 - uart: 16.0ms ( 62 Hz)
 
@@ -51,7 +57,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimaged angle which needs diff Q-point for that value)
 """
 
-__version__ = "0.8.2"
+__version__ = "0.8.3"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -370,16 +376,16 @@ _INITIAL_REPORTS = {
         "In-Vehicle": -1,
     },
     BNO_REPORT_STABILITY_CLASSIFIER: "Unknown",
-    BNO_REPORT_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0),
-    BNO_REPORT_GAME_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0),
-    BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0),
+    BNO_REPORT_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
+    BNO_REPORT_GAME_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
+    BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
     # Gyro is a 5 tuple, Celsius float and int timestamp for last two entry
     BNO_REPORT_RAW_GYROSCOPE: (0, 0, 0, 0.0, 0),
     # Acc & Mag are 4-tuple, int timestamp for last entry
     BNO_REPORT_RAW_ACCELEROMETER: (0, 0, 0, 0),
     BNO_REPORT_RAW_MAGNETOMETER: (0, 0, 0, 0),
-    BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0.0, 0, 0),
-    BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0),
+    BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0),
+    BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
     BNO_REPORT_STEP_COUNTER: 0,
 }
 
@@ -506,14 +512,14 @@ class Packet:
 
 class SensorReading3:
     """3-tuple reports with optional metadata or optional full."""
-    __slots__ = ("v1", "v2", "v3", "accuracy", "timestamp_us")
+    __slots__ = ("v1", "v2", "v3", "accuracy", "timestamp_ms")
 
-    def __init__(self, v1, v2, v3, accuracy, timestamp_us):
+    def __init__(self, v1, v2, v3, accuracy, timestamp_ms):
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
         self.accuracy = accuracy
-        self.timestamp_us = timestamp_us
+        self.timestamp_ms = timestamp_ms
 
     def __iter__(self):
         yield self.v1
@@ -522,16 +528,16 @@ class SensorReading3:
 
     @property
     def meta(self):
-        return self.accuracy, self.timestamp_us
+        return self.accuracy, self.timestamp_ms
 
     @property
     def full(self):
-        return self.v1, self.v2, self.v3, self.accuracy, self.timestamp_us
+        return self.v1, self.v2, self.v3, self.accuracy, self.timestamp_ms
 
     def __repr__(self):
         return (
             f"Sensor 3-tuple (v1={self.v1}, v2={self.v2}, v3={self.v3}, "
-            f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+            f"accuracy={self.accuracy}, timestamp_ms={self.timestamp_ms})"
         )
 
 
@@ -543,15 +549,15 @@ class SensorReading4:
     bno.geomagnetic_quaternion is really 5-tuple, but few need est angle we treat it as 4-tuple
     FUTURE: Explore if estimated angle and how to expose it for advanced users
     """
-    __slots__ = ("v1", "v2", "v3", "v4", "accuracy", "timestamp_us")
+    __slots__ = ("v1", "v2", "v3", "v4", "accuracy", "timestamp_ms")
 
-    def __init__(self, v1, v2, v3, v4, accuracy, timestamp_us):
+    def __init__(self, v1, v2, v3, v4, accuracy, timestamp_ms):
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
         self.v4 = v4
         self.accuracy = accuracy
-        self.timestamp_us = timestamp_us
+        self.timestamp_ms = timestamp_ms
 
     def __iter__(self):
         yield self.v1
@@ -561,7 +567,7 @@ class SensorReading4:
 
     @property
     def meta(self):
-        return self.accuracy, self.timestamp_us
+        return self.accuracy, self.timestamp_ms
 
     @property
     def euler(self):
@@ -570,17 +576,17 @@ class SensorReading4:
 
     @property
     def full(self):
-        return self.v1, self.v2, self.v3, self.v4, self.accuracy, self.timestamp_us
+        return self.v1, self.v2, self.v3, self.v4, self.accuracy, self.timestamp_ms
 
     @property
     def euler_full(self):
         roll, pitch, yaw = euler_conversion(self.v1, self.v2, self.v3, self.v4)
-        return roll, pitch, yaw, self.accuracy, self.timestamp_us
+        return roll, pitch, yaw, self.accuracy, self.timestamp_ms
 
     def __repr__(self):
         return (
             f"Sensor 4-tuple (v1={self.v1}, v2={self.v2}, v3={self.v3}, v4={self.v4}, "
-            f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+            f"accuracy={self.accuracy}, timestamp_ms={self.timestamp_ms})"
         )
 
 
@@ -589,16 +595,16 @@ class SensorReading5:
     5-tuple reading with optional metadata and optional full.
     FUTURE: process ARVR rotation and full quaternion implementation wth estimated angle
     """
-    __slots__ = ("v1", "v2", "v3", "v4", "e1", "accuracy", "timestamp_us")
+    __slots__ = ("v1", "v2", "v3", "v4", "e1", "accuracy", "timestamp_ms")
 
-    def __init__(self, v1, v2, v3, v4, e1, accuracy, timestamp_us):
+    def __init__(self, v1, v2, v3, v4, e1, accuracy, timestamp_ms):
         self.v1 = v1
         self.v2 = v2
         self.v3 = v3
         self.v4 = v4
         self.e1 = e1
         self.accuracy = accuracy
-        self.timestamp_us = timestamp_us
+        self.timestamp_ms = timestamp_ms
 
     def __iter__(self):
         yield self.v1
@@ -609,16 +615,16 @@ class SensorReading5:
 
     @property
     def meta(self):
-        return self.accuracy, self.timestamp_us
+        return self.accuracy, self.timestamp_ms
 
     @property
     def full(self):
-        return self.v1, self.v2, self.v3, self.v4, self.e1, self.accuracy, self.timestamp_us
+        return self.v1, self.v2, self.v3, self.v4, self.e1, self.accuracy, self.timestamp_ms
 
     def __repr__(self):
         return (
             f"Sensor 5-tuple(v1={self.v1}, v2={self.v2}, v3={self.v3}, v4={self.v4}, e1={self.e1},"
-            f"accuracy={self.accuracy}, timestamp_us={self.timestamp_us})"
+            f"accuracy={self.accuracy}, timestamp_ms={self.timestamp_ms})"
         )
 
 
@@ -651,8 +657,9 @@ class BNO08X:
         self._data_buffer_memoryview = memoryview(self._data_buffer)
         self._command_buffer: bytearray = bytearray(12)
         self._packet_slices = []
-        self.last_interrupt_us = 0
-        self.prev_interrupt_us = 0
+        self.last_interrupt_ms = -1  #used to signal first interrupt
+        self.prev_interrupt_ms = -1
+        self._sensor_epoch_ms = 0.0
         self._last_base_timestamp_us = 0
 
         # track sequence numbers one per channel, one per direction
@@ -676,7 +683,7 @@ class BNO08X:
         self.reset_sensor()
 
         # if no int_pin when significant commmunication has already occured, raise error
-        if self.last_interrupt_us == 0:
+        if self.last_interrupt_ms == 0:
             raise RuntimeError("No int_pin signals, check int_pin wiring")
 
         self._dbg("********** End __init__ *************\n")
@@ -685,9 +692,14 @@ class BNO08X:
         """
         Interrupt handler for active-low H_INTN (int_pin).
         Captures the exact host timestamp (usec = microseconds).
+        At first interrrupt
+         * self._sensor_epoch_ms starts at 0.0 ms at first interrupt.
+         * self._epoch_start_ms was the host ticks ms at first interrupt.
         """
-        self.prev_interrupt_us = self.last_interrupt_us
-        self.last_interrupt_us = ticks_us()
+        if self.last_interrupt_ms == -1:
+            self._epoch_start_ms = ticks_ms()  # self._sensor_epoch_ms = 0.0  set in __init__
+        self.prev_interrupt_ms = self.last_interrupt_ms
+        self.last_interrupt_ms = ticks_ms()
 
     def reset_sensor(self):
         if self._reset_pin:
@@ -918,6 +930,10 @@ class BNO08X:
         except KeyError:
             raise RuntimeError(
                 "activity classification report not enabled, use bno.enable_feature(BNO_REPORT_ACTIVITY_CLASSIFIER)") from None
+
+    def bno_start_diff(self, ticks: int) -> int:
+        """ Return milliseconds difference between ticks and sensor startup """
+        return ticks_diff(ticks, self._epoch_start_ms)
 
     @staticmethod
     def euler_conversion(i, j, k, r):
@@ -1338,8 +1354,9 @@ class BNO08X:
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
             accuracy = s.byte2 & 0x03
+            #delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
             delay_raw = ((s.byte2 & 0xFC) << 6) | s.byte3
-            delay_us = delay_raw * 100
+            delay_ms = delay_raw * 0.1  # notice delay_ms if float, we have 0.1ms accuracy
 
             # scale sensor data by Q-point scalar, likely e1 needs a different Q-point scalar
             if count == 3:
@@ -1367,13 +1384,20 @@ class BNO08X:
                 raise ValueError(f"Unexpected tuple length {count}")
 
             # remove self._dbg from time critical operations
-            # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_us=}")
+            # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_ms=}")
 
-            self._sensor_us = self.last_interrupt_us - self._last_base_timestamp_us + delay_us
+            # host base timestamps has issues of that floats overflow for large ticks and delay's 0.1ms
+            # self._sensor_ms = self.last_interrupt_ms - self._last_base_timestamp_us + delay_ms
+            # Better to use ms since first interrupt
+            self._sensor_ms = ticks_diff(self.last_interrupt_ms,self._epoch_start_ms) - self._last_base_timestamp_us * 0.001 + delay_ms
+            
+#            print(f"{self.last_interrupt_ms=}, {self._epoch_start_ms=} {self._last_base_timestamp_us=}")
+#             print(f"{(self.last_interrupt_ms - self._epoch_start_ms)=}")
+#             print(f"{delay_ms=}, {self._sensor_ms=}")
             # use to optimize irq signals
-            # print(f"sensor irq= {(self.last_interrupt_us - self.prev_interrupt_us) / 1000.0} ms")
+            # print(f"sensor irq= {(self.last_interrupt_ms - self.prev_interrupt_ms) / 1000.0} ms")
 
-            self._report_values[report_id] = sensor_data + (accuracy, self._sensor_us)
+            self._report_values[report_id] = sensor_data + (accuracy, self._sensor_ms)
             self._unread_report_count[report_id] += 1
             return
 
@@ -1417,7 +1441,7 @@ class BNO08X:
             return
 
         # Raw accelerometer and Raw Magnetometer: returns 4-tuple: x, y, z, and time_stamp
-        # time_stamp units in microseconds
+        # timestamp (int) units in internal time?
         if report_id in (BNO_REPORT_RAW_ACCELEROMETER, BNO_REPORT_RAW_MAGNETOMETER):
             x, y, z = unpack_from("<HHH", report_bytes, 4)
             time_stamp = unpack_from("<I", report_bytes, 12)[0]
@@ -1426,7 +1450,7 @@ class BNO08X:
             return
 
         # Raw gyroscope: returns 5-tuple: x, y, z, Celsius, and time_stamp
-        # time_stamp units in microseconds, Celsius in float
+        # timestamp (int) units in internal time?, Celsius in float
         if report_id == BNO_REPORT_RAW_GYROSCOPE:
             raw_x, raw_y, raw_z, temp_int, time_stamp = unpack_from("<HHHhI", report_bytes, 4)
             celsius = (temp_int / 2.0) + 23.0
@@ -1660,7 +1684,7 @@ class BNO08X:
     @property
     def _data_ready(self):
         """ Returns True if at least one new interrupt seen """
-        return self.last_interrupt_us != self.prev_interrupt_us
+        return self.last_interrupt_ms != self.prev_interrupt_ms
 
 
 # must define alias after BNO08X class, so class SensorReading4 class can use this
