@@ -60,7 +60,7 @@ class BNO08X_SPI(BNO08X):
         debug: prints very detailed logs, primarily for driver debug & development.
     """
 
-    def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, baudrate=1_000_000, debug=False):
+    def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, baudrate=3_000_000, debug=False):
         if not _is_spi(spi_bus):
             raise TypeError("spi_bus must be an SPI object with required interfaces")
 
@@ -118,6 +118,28 @@ class BNO08X_SPI(BNO08X):
                 return
             sleep_us(10)  # 10 us give 5.4ms loop 1ms give 5.4ms loop
         raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
+    
+    def _send_packet(self, channel, data):
+        seq = self._tx_sequence_number[channel]
+        data_length = len(data)
+        write_length = data_length + 4
+        pack_into("<HBB", self._data_buffer, 0, write_length, channel, seq)
+
+        mv = memoryview(self._data_buffer)
+        mv[4:4 + data_length] = data
+        
+        if self._debug:
+            packet = Packet(self._data_buffer)
+            self._dbg("")
+            self._dbg(f"Sending packet: {packet}")
+
+        self._cs.value(0)
+        sleep_us(1)
+        self._spi.write(mv[:write_length])  # also zero-copy
+        self._cs.value(1)
+
+        self._tx_sequence_number[channel] = (seq + 1) & 0xFF
+        return
 
     def _read_header(self, wait=True):
         """Reads the first 4 bytes available as a header"""
@@ -141,7 +163,8 @@ class BNO08X_SPI(BNO08X):
 
             if packet_length == 0xFFFF or packet_length == 0:
                 raise PacketError("No valid packet received despite INT being low")
-
+    
+            # * commented out self._dbg in time critical loops for normal operation
             # self._dbg(f"Non-blocking read SUCCESS. Header length: {packet_length}. Pin state: {self._int.value()}")
 
     def _read_packet(self, wait=True):
@@ -166,8 +189,7 @@ class BNO08X_SPI(BNO08X):
         if packet_bytes & 0x8000:
             halfpacket = True
 
-        if packet_bytes > DATA_BUFFER_SIZE:
-            # If the packet is too big, reallocate the buffer. This is normal.
+        if packet_bytes > DATA_BUFFER_SIZE: # if packet too big, reallocate, this is normal.
             self._data_buffer = bytearray(packet_bytes)
 
         self._cs.value(0)
@@ -183,24 +205,8 @@ class BNO08X_SPI(BNO08X):
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
         
-        # self._dbg commented out in time critical code
-        self._dbg(f"Received Packet: {new_packet}")
+        # * commented out self._dbg in time critical loops for normal operation
+        #self._dbg(f"Received Packet: {new_packet}")
         
         return new_packet
 
-    def _send_packet(self, channel, data):
-        seq = self._tx_sequence_number[channel]
-        data_length = len(data)
-        write_length = data_length + 4
-        pack_into("<HBB", self._data_buffer, 0, write_length, channel, seq)
-
-        mv = memoryview(self._data_buffer)
-        mv[4:4 + data_length] = data
-
-        self._cs.value(0)
-        sleep_us(1)
-        self._spi.write(mv[:write_length])  # also zero-copy
-        self._cs.value(1)
-
-        self._tx_sequence_number[channel] = (seq + 1) & 0xFF
-        return
