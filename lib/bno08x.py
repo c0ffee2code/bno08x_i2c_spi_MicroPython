@@ -91,8 +91,8 @@ _SET_FEATURE_COMMAND = const(0xFD)
 _GET_FEATURE_RESPONSE = const(0xFC)
 _BASE_TIMESTAMP = const(0xFB)
 _TIMESTAMP_REBASE = const(0xFA)
-_SHTP_REPORT_PRODUCT_ID_REQUEST = const(0xF9)
-_SHTP_REPORT_PRODUCT_ID_RESPONSE = const(0xF8)
+_REPORT_PRODUCT_ID_REQUEST = const(0xF9)
+_REPORT_PRODUCT_ID_RESPONSE = const(0xF8)
 _FRS_WRITE_REQUEST = const(0xF7)
 _FRS_WRITE_DATA = const(0xF6)
 _FRS_WRITE_RESPONSE = const(0xF5)
@@ -264,7 +264,7 @@ _Q_POINT_8_SCALAR = 2 ** (8 * -1)
 _Q_POINT_4_SCALAR = 2 ** (4 * -1)
 
 _REPORT_LENGTHS = {
-    _SHTP_REPORT_PRODUCT_ID_RESPONSE: 16,
+    _REPORT_PRODUCT_ID_RESPONSE: 16,
     _GET_FEATURE_RESPONSE: 17,
     _COMMAND_RESPONSE: 16,
     _BASE_TIMESTAMP: 5,
@@ -1300,7 +1300,7 @@ class BNO08X:
             return
 
         # Product ID Response (0xf8)
-        if report_id == _SHTP_REPORT_PRODUCT_ID_RESPONSE:
+        if report_id == _REPORT_PRODUCT_ID_RESPONSE:
             reset_cause = report_bytes[1]
             sw_major = report_bytes[2]
             sw_minor = report_bytes[3]
@@ -1572,44 +1572,46 @@ class BNO08X:
 
     def _check_id(self):
         """
-        Ensures the BNO08X product ID is read by polling and processing all incoming packets.
-        Send Product ID request then process packets until Produce ID response (0xf8) received.
-        first 0xf8 indicates reset success and last reset cause. Total of 4 0xf8 is normal.
+        Send Product ID request then process packets until _COMMAND_RESPONSE (0xf1) received.
+        Then handle packets, the first 0xf8 indicates reset success and last reset cause.
+        Total of 4 0xf8 is normal (last 3 0xf8 will have reset causes = 0).
         """
         self._dbg("********** Check ID **********")
         if getattr(self, "_product_id_received", False):
             return True
 
+        # On channel 2 send PRODUCT_ID_REQUEST (0xf9)
         data = bytearray(2)
-        data[0] = _SHTP_REPORT_PRODUCT_ID_REQUEST
+        data[0] = _REPORT_PRODUCT_ID_REQUEST
         data[1] = 0
         self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, data)
-
-        # Process ALL packets until 0xF8 is found, ex: Timestamp, Errors, and Command Responses.
+        
+        # On channel 2, read packets until _COMMAND_RESPONSE (0xf1)
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < 3.0:
-            # Check if new data is available without blocking
-            if not self._data_ready:
-                sleep_ms(10)
+            try:
+                packet = self._read_packet(wait=False)
+                if packet is None:
+                    continue
+                if packet.channel_number != _BNO_CHANNEL_CONTROL:
+                    continue
+                if len(packet.data) == 0:
+                    continue
+                if packet.report_id == _COMMAND_RESPONSE:
+                    # Handle packet to process _REPORT_PRODUCT_ID_RESPONSE
+                    self._handle_packet(packet)
+                    break
+            except (RuntimeError, PacketError):
                 continue
 
-            try:
-                packet = self._read_packet(wait=False) 
-                self._handle_packet(packet)
+        # see that _REPORT_PRODUCT_ID_RESPONSE (0xf8) received
+        if getattr(self, "_product_id_received", False):
+            return True
 
-                # Return on success the packet set the flag for the Product ID (0xF8)
-                if getattr(self, "_product_id_received", False):
-                    self._dbg("Product ID successfully received and processed.")
-                    return True       
-            except RuntimeError as e:
-                self._dbg(f"Read error during ID check: {e}")
-                pass
-            except PacketError:
-                # Expected if a partial/corrupt packet is read
-                pass
-
-        raise RuntimeError(f"Timeout waiting for valid Product ID response, check your {self._interface} interface")
+        raise RuntimeError(
+            f"Timeout waiting for valid BNO Product ID response, check your {self._interface} interface"
+        )
 
     def _dbg(self, *args, **kwargs) -> None:
         if self._debug:
@@ -1620,7 +1622,7 @@ class BNO08X:
         if not self._reset_pin:
             return
 
-        self._dbg("*** Hard Reset start (base class: spi, i2c)...")
+        self._dbg("*** Hard Reset starting...")
         self._reset_pin.value(1)
         sleep_ms(10)
         self._reset_pin.value(0)
