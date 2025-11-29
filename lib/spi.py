@@ -28,7 +28,7 @@ from struct import pack_into
 
 import uctypes
 from machine import Pin
-from utime import ticks_ms, ticks_diff, sleep_ms, sleep_us
+from utime import ticks_ms, ticks_diff, sleep_us
 
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
 
@@ -37,6 +37,15 @@ _HEADER_STRUCT = {
     "channel": (uctypes.UINT8 | 2),
     "sequence": (uctypes.UINT8 | 3),
 }
+
+
+def _is_spi(obj) -> bool:
+    """Check that SPI object has required interfaces"""
+    return (hasattr(obj, "read") and
+            hasattr(obj, "write") and
+            hasattr(obj, "write_readinto") and
+            hasattr(obj, "init")
+            )
 
 
 class BNO08X_SPI(BNO08X):
@@ -52,9 +61,9 @@ class BNO08X_SPI(BNO08X):
     """
 
     def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, baudrate=1_000_000, debug=False):
-        if spi_bus is None:
-            raise RuntimeError("SPI bus object (spi_bus) must be provided for BNO08X_SPI operation.")
-        
+        if not _is_spi(spi_bus):
+            raise TypeError("spi_bus must be an SPI object with required interfaces")
+
         # BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
         self._spi = spi_bus
         self._spi.init(baudrate=baudrate, polarity=1, phase=1)
@@ -80,15 +89,14 @@ class BNO08X_SPI(BNO08X):
         if not isinstance(int_pin, Pin):
             raise TypeError("int_pin must be a Pin object, not {type(int_pin)}")
         self._int = int_pin
-        self._int.init(Pin.IN, Pin.PULL_UP) # guarantee int_pin is properly set up
+        self._int.init(Pin.IN, Pin.PULL_UP)  # guarantee int_pin is properly set up
 
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
-        
+
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
-
 
     def _wait_for_int(self):
         """
