@@ -67,7 +67,7 @@ import uctypes
 from collections import namedtuple
 from machine import Pin
 from micropython import const
-from utime import ticks_us, ticks_ms, ticks_diff, sleep_ms, sleep_us
+from utime import ticks_ms, ticks_diff, sleep_ms, sleep_us
 
 # Commands
 BNO_CHANNEL_SHTP_COMMAND = const(0)
@@ -658,7 +658,7 @@ class BNO08X:
         self._data_buffer_memoryview = memoryview(self._data_buffer)
         self._command_buffer: bytearray = bytearray(12)
         self._packet_slices = []
-        self.last_interrupt_ms = -1  #used to signal first interrupt
+        self.last_interrupt_ms = -1  # used to signal first interrupt
         self.prev_interrupt_ms = -1
         self._data_available = False
         self._sensor_epoch_ms = 0.0
@@ -1357,7 +1357,7 @@ class BNO08X:
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
             accuracy = s.byte2 & 0x03
-            #delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
+            # delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
             delay_raw = ((s.byte2 & 0xFC) << 6) | s.byte3
             delay_ms = delay_raw * 0.1  # notice delay_ms if a float, we have 0.1ms accuracy
 
@@ -1392,11 +1392,12 @@ class BNO08X:
             # host base timestamps has issues of that floats overflow for large ticks and delay's 0.1ms
             # self._sensor_ms = self.last_interrupt_ms - self._last_base_timestamp_us + delay_ms
             # Better to use ms since first interrupt
-            self._sensor_ms = ticks_diff(self.last_interrupt_ms,self._epoch_start_ms) - self._last_base_timestamp_us * 0.001 + delay_ms
-            
-#            print(f"{self.last_interrupt_ms=}, {self._epoch_start_ms=} {self._last_base_timestamp_us=}")
-#             print(f"{(self.last_interrupt_ms - self._epoch_start_ms)=}")
-#             print(f"{delay_ms=}, {self._sensor_ms=}")
+            self._sensor_ms = ticks_diff(self.last_interrupt_ms,
+                                         self._epoch_start_ms) - self._last_base_timestamp_us * 0.001 + delay_ms
+
+            #            print(f"{self.last_interrupt_ms=}, {self._epoch_start_ms=} {self._last_base_timestamp_us=}")
+            #             print(f"{(self.last_interrupt_ms - self._epoch_start_ms)=}")
+            #             print(f"{delay_ms=}, {self._sensor_ms=}")
             # use to optimize irq signals
             # print(f"sensor irq= {(self.last_interrupt_ms - self.prev_interrupt_ms) / 1000.0} ms")
 
@@ -1586,7 +1587,7 @@ class BNO08X:
         data[1] = 0
         self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, data)
-        
+
         # On channel 2, read packets until _COMMAND_RESPONSE (0xf1)
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < 3.0:
