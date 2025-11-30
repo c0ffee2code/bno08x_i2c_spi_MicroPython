@@ -132,7 +132,7 @@ The examples directory shows the use of the following sensor reports. Each of th
     stability_str = bno.stability_classification    # string of stability classification returned
     activity_str = bno.activity_classification      # string of activity classification returned
 
-The following  can be used to tare and manually calibrate the sensor:
+The following can be used to tare and manually calibrate the sensor:
 
     bno.tare(0x07, BNO_REPORT_ROTATION_VECTOR)
     bno.save_tare_data
@@ -141,6 +141,11 @@ The following  can be used to tare and manually calibrate the sensor:
     bno.calibration_status  # wait for sensor to be ready to calibrate
     # loop to test acceleration, magnetic, gyro  - see examples/test_calibration.py
     bno.save_calibration_data
+
+We also supply the following conversion helper function:
+
+    rx, ry, rz = bno.gyro  # results in Radians per second
+    dx, dy, dz = bno.degree_conversion(rx, ry, rz)  # results in Degrees per second
 
 ## Option to Change Sensor Report Frequency
 
@@ -181,7 +186,7 @@ The PS0 (Wake_pin) must be connected to a gpio (wake_pin), please be careful not
 This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08X out of sleep for communication with the BNO08X.
 On the Sparkfun BNO086 when using SPI, you must clear i2c jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
 
- SPI must be set to baudrate=3_000_000 (only).
+ SPI should be set to baudrate=3_000_000.
 
     from bno08x import *
     from i2c import BNO08X_I2C
@@ -207,8 +212,7 @@ Optional for SPI:
 - baudrate : default is 3_000_000 (3MHz)
 
 ## UART Setup -- TODO  UART IN DEBUG !!! TODO  UART IN DEBUG !!! TODO  UART IN DEBUG !!!
-WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
-WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
+WARNING - WARNING
 
  UART must be set to baudrate=3_000_000 (only).
 
@@ -276,7 +280,7 @@ The actual sensor period will vary from the attempted period returned by this fu
     print(f"Accelerometer: {period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
 Currently On Pico 2 W, the SPI interface can almost service 2ms reports. 
-The fastest updates we've seen on SPI is 3.0 ms (333Hz), I2C is slower at 3.8ms (263Hz). When you request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
+The fastest updates we've seen on SPI is 2.7 ms (333Hz), I2C is slower at 3.8ms (263Hz). When you request report frequencies at faster than the microcontroler can service, the period the reporting frequency will slow.
 Try you own experiments and let me know what you find.
 
 Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
