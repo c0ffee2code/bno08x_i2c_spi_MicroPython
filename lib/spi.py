@@ -60,13 +60,13 @@ class BNO08X_SPI(BNO08X):
         debug: prints very detailed logs, primarily for driver debug & development.
     """
 
-    def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, baudrate=3_000_000, debug=False):
+    def __init__(self, spi_bus, cs_pin, reset_pin=None, int_pin=None, wake_pin=None, debug=False):
         if not _is_spi(spi_bus):
-            raise TypeError("spi_bus must be an SPI object with required interfaces")
+            raise TypeError("spi parameter must be an SPI object")
 
         # BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
         self._spi = spi_bus
-        self._spi.init(baudrate=baudrate, polarity=1, phase=1)
+        self._spi.init(polarity=1, phase=1)
         self._debug = debug
         _interface = "SPI"
 
