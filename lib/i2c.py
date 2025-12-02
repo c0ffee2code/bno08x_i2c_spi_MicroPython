@@ -143,6 +143,7 @@ class BNO08X_I2C(BNO08X):
             return None     
 
         mv = memoryview(self._data_buffer)[:packet_bytes]
+        # TODO line below will sometimes return OSError: [Errno 110] ETIMEDOUT
         self._i2c.readfrom_into(self._bno_i2c_addr, mv)
 
         new_packet = Packet(self._data_buffer[:packet_bytes])
@@ -153,3 +154,13 @@ class BNO08X_I2C(BNO08X):
         #self._dbg(f"Received Packet: {new_packet}")
         
         return new_packet
+
+#     # I2C _data_ready logic. resets _data_available flag for next int event
+#     @property
+#     def _data_ready(self):
+#         if self._int.value() == 0:
+#             self._data_available = True
+# 
+#         ready = self._data_available
+#         self._data_available = False
+#         return ready
