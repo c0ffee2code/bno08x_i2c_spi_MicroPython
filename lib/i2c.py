@@ -49,7 +49,7 @@ class BNO08X_I2C(BNO08X):
 
     def __init__(self, i2c_bus, address=_BNO08X_DEFAULT_ADDRESS, reset_pin=None, int_pin=None, debug=False):
         if not _is_i2c(i2c_bus):
-            raise TypeError("i2c_bus must be an I2C object with required interfaces")
+            raise TypeError("i2c parameter must be an I2C object")
         
         self._i2c = i2c_bus
         self._debug = debug
@@ -82,17 +82,19 @@ class BNO08X_I2C(BNO08X):
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
     def _wait_for_int(self):
-        """
-        Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
-        """
+        """ Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag """
         start_time = ticks_ms()
 
+        # 2nd remove
+        self._dbg(f"_wait_for_int: INT pin={self._int.value()}, _data_ready={self._data_ready}")
         if self._int.value() == 0 and self._data_ready:
-            # self._dbg commented out in time critical code
+            # * self._dbg commented out in time critical code
             # self._dbg("_wait_for_int: INT is active low (0) on entry and _data_ready")
             return
 
         while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec
+            # 2nd remove
+            self._dbg(f"_wait_for_int: Polling... Ticks diff={ticks_diff(ticks_ms(), start_time)}")
             if self._data_ready:
                 return
             sleep_us(1000)
@@ -130,11 +132,14 @@ class BNO08X_I2C(BNO08X):
         packet_bytes = header_view.packet_bytes
         channel = header_view.channel
         seq = header_view.sequence
+        #****this debug matters ?
+        self._dbg(f"I2C Header: PktLen={packet_bytes}, Channel={channel}, Seq={seq}")
         self._rx_sequence_number[channel] = seq # SH2 Sequence number
         
         if packet_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(packet_bytes)
         if packet_bytes == 0:
+            self._dbg("I2C Read: Packet length is 0 (no data), returning None.")
             return None     
 
         mv = memoryview(self._data_buffer)[:packet_bytes]
@@ -144,17 +149,7 @@ class BNO08X_I2C(BNO08X):
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq # report sequence number
         
-        # self._dbg commented out in time-critical code
-        self._dbg(f"Received Packet: {new_packet}")
+        # * self._dbg commented out in time-critical code
+        #self._dbg(f"Received Packet: {new_packet}")
         
         return new_packet
-
-    # I2C _data_ready logic. resets _data_available flag for next int event
-    @property
-    def _data_ready(self):
-        if self._int.value() == 0:
-            self._data_available = True
-
-        ready = self._data_available
-        self._data_available = False
-        return ready
