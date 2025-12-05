@@ -30,10 +30,10 @@ _HEADER_STRUCT = {
 def _is_i2c(obj) -> bool:
     """ Check that i2c object has required interfaces """
     return (
-        hasattr(obj, "readfrom") and
-        hasattr(obj, "writeto") and
-        hasattr(obj, "readfrom_mem") and
-        hasattr(obj, "writeto_mem")
+            hasattr(obj, "readfrom") and
+            hasattr(obj, "writeto") and
+            hasattr(obj, "readfrom_mem") and
+            hasattr(obj, "writeto_mem")
     )
 
 
@@ -50,7 +50,7 @@ class BNO08X_I2C(BNO08X):
     def __init__(self, i2c_bus, address=_BNO08X_DEFAULT_ADDRESS, reset_pin=None, int_pin=None, debug=False):
         if not _is_i2c(i2c_bus):
             raise TypeError("i2c parameter must be an I2C object")
-        
+
         self._i2c = i2c_bus
         self._debug = debug
         _interface = "I2C"
@@ -77,7 +77,7 @@ class BNO08X_I2C(BNO08X):
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"Reset (RST) pin must be a Pin object or None, not {type(reset_pin)}")
         self._reset = reset_pin
-    
+
         # I2C can not use cs_pin or wake_pin
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
@@ -111,47 +111,57 @@ class BNO08X_I2C(BNO08X):
 
         if self._debug:
             packet = Packet(self._data_buffer)
-            self._dbg("")
-            self._dbg(f"Sending packet: {packet}")
+            self._dbg(f"  Sending Packet *************{packet}")
 
         mv = memoryview(self._data_buffer)
         self._i2c.writeto(self._bno_i2c_addr, mv[:write_length])
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
-        return self._tx_sequence_number[channel] 
- 
+        return self._tx_sequence_number[channel]
+
     def _read_packet(self, wait=None):
-        wait = bool(wait) #  both wait=None wait=False are non-blocking
+        wait = bool(wait)  # both wait=None wait=False are non-blocking
         if wait:
             self._wait_for_int()
 
         header_mv = memoryview(self._data_buffer)[:4]
         self._i2c.readfrom_into(self._bno_i2c_addr, header_mv)
-        
+
         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-        packet_bytes = header_view.packet_bytes
+        raw_packet_bytes = header_view.packet_bytes
         channel = header_view.channel
         seq = header_view.sequence
-        #****this debug matters ?
-        self._dbg(f"I2C Header: PktLen={packet_bytes}, Channel={channel}, Seq={seq}")
-        self._rx_sequence_number[channel] = seq # SH2 Sequence number
-        
+        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+
+        # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
+        if raw_packet_bytes == 0:
+            self._dbg("-read_packet: packet_bytes=0 (no data), returning None.")
+            return None
+        if raw_packet_bytes == 0xFFFF:
+            raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
+
+        halfpacket = bool(raw_packet_bytes & 0x8000)
+        packet_bytes = raw_packet_bytes & 0x7FFF
+
+        self._dbg(f"I2C Header: {packet_bytes=}, {channel=}, {seq=}")
+
         if packet_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(packet_bytes)
-        if packet_bytes == 0:
-            self._dbg("I2C Read: Packet length is 0 (no data), returning None.")
-            return None     
 
         mv = memoryview(self._data_buffer)[:packet_bytes]
         # TODO self._i2c.readfrom_into will sometimes return OSError: [Errno 110] ETIMEDOUT
         sleep_us(200)
         self._i2c.readfrom_into(self._bno_i2c_addr, mv)
 
+        if halfpacket:
+            self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
+            # raise PacketError("read partial packet")
+
         new_packet = Packet(self._data_buffer[:packet_bytes])
         seq = new_packet.header.sequence_number
-        self._rx_sequence_number[channel] = seq # report sequence number
-        
-        # * self._dbg commented out in time-critical code
-        #self._dbg(f"Received Packet: {new_packet}")
-        
+        self._rx_sequence_number[channel] = seq  # report sequence number
+
+        # * commented out self._dbg in time critical loops for normal operation
+        self._dbg(f" Received Packet *************{new_packet}")
+
         return new_packet
