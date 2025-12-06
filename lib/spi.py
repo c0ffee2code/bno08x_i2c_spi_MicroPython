@@ -32,6 +32,14 @@ from utime import ticks_ms, ticks_diff, sleep_us
 
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
 
+# TODO Need to find definitive value
+# 272 bytes shown in ll-test GitHub
+# 256 returned by Advertisement debug=True, TAG_MAX_CARGO_PLUS_HEADER_READ
+#     BUT, then Arduino code subtracts 4, which is header size?
+# 282: x01 x1a   spi header+advert
+# 284: x01 x1c   i2c header+advert
+_SHTP_MAX_CARGO_PACKET_BYTES = 284
+
 _HEADER_STRUCT = {
     "packet_bytes": (uctypes.UINT16 | 0),
     "channel": (uctypes.UINT8 | 2),
@@ -118,7 +126,7 @@ class BNO08X_SPI(BNO08X):
                 return
             sleep_us(10)  # 10 us 
         raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
-    
+
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
@@ -127,7 +135,7 @@ class BNO08X_SPI(BNO08X):
 
         mv = memoryview(self._data_buffer)
         mv[4:4 + data_length] = data
-        
+
         if self._debug:
             packet = Packet(self._data_buffer)
             self._dbg(f"  Sending Packet *************{packet}")
@@ -154,10 +162,10 @@ class BNO08X_SPI(BNO08X):
         mv = memoryview(self._data_buffer)
         self._spi.readinto(mv[:4], 0x00)
         self._cs.value(1)
-        
+
         # header_view here seems required - weird, unknown side effect
         header_view = uctypes.struct(uctypes.addressof(mv), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-    
+
         # * commented out self._dbg in time critical loops for normal operation
         #  self._dbg(f"_read_packet header: {[hex(x) for x in self._data_buffer[0:4]]}")
 
@@ -170,16 +178,19 @@ class BNO08X_SPI(BNO08X):
         raw_packet_bytes = header_view.packet_bytes
         channel = header_view.channel
         seq = header_view.sequence
-        self._rx_sequence_number[channel] = seq # SH2 Sequence number
-        
+        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+
         # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
-        if raw_packet_bytes < 4 or raw_packet_bytes == 0xFFFF:
+        if raw_packet_bytes == 0:
+            self._dbg("_read_packet: packet_bytes=0, returning None.")
+            return None
+        if raw_packet_bytes == 0xFFFF:
             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
         
-        halfpacket = bool(raw_packet_bytes & 0x8000)
         packet_bytes = raw_packet_bytes & 0x7FFF
+        continuation = bool(raw_packet_bytes & 0x8000)
 
-        if packet_bytes > DATA_BUFFER_SIZE: # if packet too big, reallocate, this is normal.
+        if packet_bytes > DATA_BUFFER_SIZE:  # if packet too big, reallocate, this is normal.
             self._data_buffer = bytearray(packet_bytes)
 
         self._cs.value(0)
@@ -188,9 +199,10 @@ class BNO08X_SPI(BNO08X):
         self._spi.readinto(mv, 0x00)
         self._cs.value(1)
 
-        if halfpacket:
-            self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
-            # raise PacketError("read partial packet")
+#         continuation = bool(raw_packet_bytes & 0x8000)
+#         if continuation:
+#             self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
+#             # raise PacketError("read partial packet")
 
         new_packet = Packet(self._data_buffer)
         seq = new_packet.header.sequence_number
@@ -198,6 +210,5 @@ class BNO08X_SPI(BNO08X):
 
         # * commented out self._dbg in time critical loops for normal operation
         self._dbg(f" Received Packet *************{new_packet}")
-        
-        return new_packet
 
+        return new_packet
