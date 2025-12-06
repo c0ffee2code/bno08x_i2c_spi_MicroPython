@@ -105,6 +105,7 @@ class BNO08X_I2C(BNO08X):
                 return
             sleep_us(10)  # 10 us 
         raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
+    
 
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
@@ -145,7 +146,7 @@ class BNO08X_I2C(BNO08X):
             return None
         if raw_packet_bytes == 0xFFFF:
             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
-
+        
         packet_bytes = raw_packet_bytes & 0x7FFF
 
         if packet_bytes > len(self._data_buffer):
@@ -175,6 +176,6 @@ class BNO08X_I2C(BNO08X):
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * commented out self._dbg in time critical loops for normal operation
-        # self._dbg(f" Received Packet *************{new_packet}")
+        self._dbg(f" Received Packet *************{new_packet}")
 
         return new_packet
