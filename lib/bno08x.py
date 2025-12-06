@@ -101,6 +101,7 @@ _FRS_READ_REQUEST = const(0xF4)
 _FRS_READ_RESPONSE = const(0xF3)
 _COMMAND_REQUEST = const(0xF2)
 _COMMAND_RESPONSE = const(0xF1)
+_CMD_ADVERTISE = const(0x00)  # Request Advertisement on Chan 0
 
 # ME / DCD Calibration commands and sub-commands
 _ME_TARE_COMMAND = const(0x03)
@@ -478,6 +479,72 @@ class Packet:
         outstr += "\n\t\t*******************************\n"
         # ascii = ''.join(chr(b) if 32 <= b <= 126 else f" x{b:02X}" for b in self.data[:length])
         # outstr += f"\nDBG::\t\t ascii: {ascii}\n"
+
+        # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _CMD_ADVERTISE (0)
+        # This will provide sensor information that is printed with debug=True
+        # Still need to debug this
+        if self.header.data_length == 51 and self.channel_number == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _CMD_ADVERTISE:
+            outstr += "\nDBG::\t\t SHTP Advertisement Response (0x00) on channel: SHTP_COMMAND (0x0)\n"
+            length = len(self.data)
+            index = 1  # skip the first byte of the payload is the Response ID (0x00)
+
+            while index < length:
+                tag_index = index
+                tag = self.data[tag_index]
+                len_index = index + 1
+                tag_len = self.data[len_index]
+                value_index = index + 2
+                value = self.data[value_index:value_index + tag_len]
+
+                # Print absolute byte range and interpreted value
+                byte_range = f" *** {tag_index}-{value_index + tag_len - 1}"
+
+                if tag == 0:  # TAG_NULL (2 bytes total)
+                    outstr += f"DBG::\t\t {byte_range} TAG_NULL\n"
+                elif tag == 1:  # TAG_GUID (6 bytes total)
+                    guid = unpack_from("<I", value)[0]  # 4-byte little-endian
+                    outstr += f"DBG::\t\t {byte_range} TAG_GUID: {guid}\n"
+                elif tag == 2:  # TAG_MAX_CARGO_PLUS_HEADER_WRITE (4 bytes total)
+                    # Max Usable Cargo write Size = MaxCargoPlusHeaderWrite − 4 (SHTP Header Length)
+                    max_cargo_write = unpack_from("<H", value)[0] - 4  # take away header size, really?
+                    outstr += f"DBG::\t\t {byte_range} Max Cargo Write: {max_cargo_write}, without header\n"
+                elif tag == 3:  # TAG_MAX_CARGO_PLUS_HEADER_READ (4 bytes total)
+                    # Max Usable Cargo read Size = MaxCargoPlusHeaderRead − 4 (SHTP Header Length)
+                    max_cargo_read = unpack_from("<H", value)[0] - 4
+                    outstr += f"DBG::\t\t {byte_range} Max Cargo Read: {max_cargo_read}, without header\n"
+                elif tag == 4:  # TAG_MAX_TRANSFER_WRITE (4 bytes total)
+                    max_transfer_write = unpack_from("<H", value)[0]
+                    max_transfer_write = min(max_transfer_write, 1024)
+                    outstr += f"DBG::\t\t {byte_range} TAG_MAX_TRANSFER_WRITE: {max_transfer_write}\n"
+                elif tag == 5:  # TAG_MAX_TRANSFER_READ (4 bytes total)
+                    max_transfer_read = unpack_from("<H", value)[0]
+                    max_transfer_read = min(max_transfer_read, 1024)
+                    outstr += f"DBG::\t\t {byte_range} TAG_MAX_TRANSFER_READ: {max_transfer_read}\n"
+                elif tag == 6:  # TAG_NORMAL_CHANNEL (3 bytes total)
+                    chan_no = unpack_from("<B", value)[0]
+                    outstr += f"DBG::\t\t {byte_range} TAG_NORMAL_CHANNEL: {chan_no}\n"
+                elif tag == 7:  # TAG_WAKE_CHANNEL (3 bytes total)
+                    wake_chan = unpack_from("<B", value)[0]
+                    outstr += f"DBG::\t\t {byte_range} TAG_WAKE_CHANNEL: {wake_chan}\n"
+                elif tag == 8:  # TAG_APP_NAME (2 + N bytes total)
+                    app_name = value.decode('ascii')
+                    outstr += f"DBG::\t\t {byte_range} TAG_APP_NAME: {app_name}\n"
+                elif tag == 9:  # TAG_CHANNEL_NAME (2 + N bytes total)
+                    chan_name = value.decode('ascii')
+                    outstr += f"DBG::\t\t {byte_range} TAG_CHANNEL_NAME: {chan_name}\n"
+                elif tag == 10:  # TAG_ADV_COUNT (3 bytes total)
+                    adv_count = unpack_from("<B", value)[0]
+                    outstr += f"DBG::\t\t {byte_range} TAG_ADV_COUNT: {adv_count}\n"
+                elif tag == 0x80:  # TAG App Specific
+                    version = value.decode('ascii')
+                    outstr += f"DBG::\t\t {byte_range} Version: {version}\n"
+                else:
+                    outtr += f"Uknown tag = {tag}\n"
+
+                # Move to next TLV using absolute byte index
+                index = value_index + tag_len
+            outstr += "\n"
+
         return outstr
 
     @property
@@ -509,6 +576,7 @@ class Packet:
         if header.packet_byte_count == 0xFFFF and header.sequence_number == 0xFF:
             return True
         return False
+
 
 class SensorReading3:
     """3-tuple reports with optional metadata or optional full."""
@@ -690,6 +758,14 @@ class BNO08X:
             raise RuntimeError("No int_pin signals, check int_pin wiring")
 
         self._dbg("********** End __init__ *************\n")
+
+        # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _CMD_ADVERTISE (0)
+        # This will provide sensor information that is printed with debug=True
+        data = bytearray(2)
+        data[0] = _CMD_ADVERTISE
+        data[1] = 0
+        self._wake_signal()
+        self._send_packet(BNO_CHANNEL_SHTP_COMMAND, data)
 
     def _on_interrupt(self, pin):
         """
@@ -1422,6 +1498,7 @@ class BNO08X:
         if 0x28 <= report_id <= 0x29:
             # FUTURE: add two ARVR reports (4-tuple and 5-Tuple)
             raise NotImplementedError(f"ARVR Reports ({hex(report_id)}) is not supported yet.")
+            return
 
         # All other reports skipped, noted with self._dbg
         self._dbg(f"_process_report: ({hex(report_id)}) not supported.")
