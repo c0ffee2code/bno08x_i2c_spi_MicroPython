@@ -101,7 +101,6 @@ class BNO08X_SPI(BNO08X):
     def _wait_for_int(self):
         """
         Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
-        This resolves the 10ms starvation issue caused by polling.
         """
         start_time = ticks_ms()
 
@@ -113,7 +112,7 @@ class BNO08X_SPI(BNO08X):
             self._dbg("INT is active low (0) on entry.")
             return
 
-        while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec
+        while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0 sec
             if self.last_interrupt_us != self.prev_interrupt_us:
                 return
             sleep_us(10)  # 10 us 
