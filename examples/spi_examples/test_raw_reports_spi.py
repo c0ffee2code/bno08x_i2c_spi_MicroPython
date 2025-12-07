@@ -29,9 +29,12 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER)
-bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER)
-bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE)
+x = bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER)
+print(f"{x=}")
+x = bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER)
+print(f"{x=}")
+x = bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE)
+print(f"{x=}")
 
 # sensor default frequencies
 bno.print_report_period()

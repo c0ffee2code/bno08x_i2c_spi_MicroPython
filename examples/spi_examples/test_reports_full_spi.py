@@ -32,23 +32,25 @@ print("Start")
 print("====================================\n")
 
 # with 0.25s sleep in loop, we request 4Hz reports (~0.25s)
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 20)
-bno.enable_feature(BNO_REPORT_MAGNETOMETER, 20)
-bno.enable_feature(BNO_REPORT_GYROSCOPE, 20)
-bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, 20)
+bno.acceleration.enable()
+bno.magnetic.enable()
+bno.gyro.enable()
+bno.quaternion.enable()
 
-# sensor provides frequencies close to what was requested
+# sensor provides frequencies that are close to what was requested
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
 while True:
     sleep(.25)
+    
+    # required to get data from enabled sensors
+    bno.update_sensors
     
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
     print(f"\nsystem {ticks_ms()=},",
         f"time from BNO start: {ms_since_sensor_start/1000.0:.3f} s",
         f"({ms_since_sensor_start:.0f} ms)")
-
+    
     accel_x, accel_y, accel_z, acc, ts_ms = bno.acceleration.full
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
     print(f"Acceleration: accuracy={acc}, {ts_ms=:.1f}")

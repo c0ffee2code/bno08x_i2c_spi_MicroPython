@@ -26,12 +26,14 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 250)
+bno.acceleration.enable(250)
 
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
 while True:
+    # required to get data from enabled sensors
+    bno.update_sensors
+
     accel_x, accel_y, accel_z = bno.acceleration
     print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f} m/s²")
     # Notice Gravity acceleration downwards (~9.8 m/s²)
