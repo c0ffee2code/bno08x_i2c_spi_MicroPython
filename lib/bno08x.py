@@ -622,17 +622,6 @@ class SensorFeature3:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
 
-    def __repr__(self):
-        """Allows printing: print(bno.acceleration)"""
-        try:
-            x, y, z, acc, ts = self._bno._report_values[self.feature_id]
-            return (
-                f"Sensor (v1={x}, v2={y}, v3={z}, accuracy={acc}, timestamp_ms={ts})"
-            )
-        except KeyError:
-            return f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
-
-
 class SensorFeature4:
     """
     4-tuple reports with optional metadata or optional full.
@@ -704,15 +693,6 @@ class SensorFeature4:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
 
-    def __repr__(self):
-        """Allows printing: print(bno.acceleration)"""
-        try:
-            x, y, z, real, acc, ts = self._bno._report_values[self.feature_id]
-            return (
-                f"Sensor (v1={x}, v2={y}, v3={z}, v4={real},accuracy={acc}, timestamp_ms={ts})"
-            )
-        except KeyError:
-            return f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
 
     # class SensorReading5:
     """
@@ -745,15 +725,6 @@ class RawSensorFeature:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
             ) from None
-
-    def __repr__(self):
-        """Allows printing: print(bno.raw_acceleration)"""
-        try:
-            values = self._bno._report_values[self.feature_id]
-            # Format the output string dynamically based on the report content
-            return f"Raw Sensor Report (Data: {values[:-1]}, Timestamp: {values[-1]})"
-        except KeyError:
-            return f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
 
 
 class BNO08X:
