@@ -29,18 +29,17 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-x = bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER)
-print(f"{x=}")
-x = bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER)
-print(f"{x=}")
-x = bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE)
-print(f"{x=}")
+bno.raw_acceleration.enable()
+bno.raw_magnetic.enable()
+bno.raw_gyro.enable()
 
 # sensor default frequencies
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
 while True:
+    # required to get data from enabled sensors
+    bno.update_sensors
+        
     accel_x, accel_y, accel_z, ts_us = bno.raw_acceleration
     print(f"\nRaw Acceleration:  X: {accel_x:#06x}  Y: {accel_y:#06x}  Z: {accel_z:#06x} {ts_us=}")
 

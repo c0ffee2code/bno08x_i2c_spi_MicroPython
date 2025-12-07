@@ -181,9 +181,9 @@ _REPORTS_DICTIONARY = {
     0x11: "STEP_COUNTER",
     0x12: "SIGNIFICANT_MOTION",
     0x13: "STABILITY_CLASSIFIER",
-    0x14: "RAW_ACCELEROMETER",
-    0x15: "RAW_GYROSCOPE",
-    0x16: "RAW_MAGNETOMETER",
+    0x14: "raw_acceleration",
+    0x15: "raw_gyro",
+    0x16: "raw_magnetic",
     0x17: "SAR - reserved",
     0x18: "STEP_DETECTOR",
     0x19: "SHAKE_DETECTOR",
@@ -721,6 +721,40 @@ class SensorFeature4:
     will have to use different scalar ror estimated angle!
     """
 
+class RawSensorFeature:
+    """
+    raw reports Feature manager: raw_acceleration & raw_magnetic (data_count=3) and raw_gyro (data_count=4).
+    """
+    __slots__ = ("_bno", "feature_id", "data_count")
+
+    def __init__(self, bno_instance, feature_id, data_count):
+        self._bno = bno_instance
+        self.feature_id = feature_id
+        self.data_count = data_count
+
+    def enable(self, hertz=None):
+        """Method to enable the feature with a given report rate (hertz)."""
+        return self._bno.enable_feature(self.feature_id, hertz)
+
+    def __iter__(self):
+        try:
+            # Slices the list/tuple from the beginning up to the number of sensor values
+            sensor_values = self._bno._report_values[self.feature_id][:self.data_count]
+            return iter(sensor_values)
+        except KeyError:
+            raise RuntimeError(
+                f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
+            ) from None
+
+    def __repr__(self):
+        """Allows printing: print(bno.raw_acceleration)"""
+        try:
+            values = self._bno._report_values[self.feature_id]
+            # Format the output string dynamically based on the report content
+            return f"Raw Sensor Report (Data: {values[:-1]}, Timestamp: {values[-1]})"
+        except KeyError:
+            return f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
+
 
 class BNO08X:
     """Library for the BNO08x IMUs from Ceva - Hillcrest Laboratories
@@ -883,39 +917,20 @@ class BNO08X:
         return SensorFeature4(self, BNO_REPORT_GAME_ROTATION_VECTOR)
 
     # raw reports to not support .full
-
     @property
     def raw_acceleration(self):
-        """raw acceleration unscaled/uncalibrated from raw registers"""
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_ACCELEROMETER] = 0
-            x, y, z, ts = self._report_values[BNO_REPORT_RAW_ACCELEROMETER]
-            return x, y, z, ts
-        except KeyError:
-            raise RuntimeError(
-                "raw acceleration report not enabled, use bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER)") from None
+        """raw acceleration from registers 3 data value and a raw timestamp"""
+        return RawSensorFeature(self, BNO_REPORT_RAW_ACCELEROMETER, data_count=4)
 
     @property
     def raw_gyro(self):
-        """ raw gyroscope unscaled/uncalibrated from raw registers, only sensor that reports Celsius """
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_GYROSCOPE] = 0
-            x, y, z, tempc, ts = self._report_values[BNO_REPORT_RAW_GYROSCOPE]
-            return x, y, z, tempc, ts
-        except KeyError:
-            raise RuntimeError(
-                "raw gyroscope report not enabled, use bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE)") from None
+        """ raw gyroscope from registers 3 data value, only sensor that reports Celsius, and a raw timestamp"""
+        return RawSensorFeature(self, BNO_REPORT_RAW_GYROSCOPE, data_count=5)
 
     @property
     def raw_magnetic(self):
-        """ raw magnetic unscaled/uncalibrated from raw registers"""
-        try:
-            self._unread_report_count[BNO_REPORT_RAW_MAGNETOMETER] = 0
-            x, y, z, ts = self._report_values[BNO_REPORT_RAW_MAGNETOMETER]
-            return x, y, z, ts
-        except KeyError:
-            raise RuntimeError(
-                "raw magnetic report not enabled, use bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER)") from None
+        """ raw magnetic from registers 3 data value and a raw timestamp"""
+        return RawSensorFeature(self, BNO_REPORT_RAW_MAGNETOMETER, data_count=4)
 
     # Other Sensor Reports
     @property
