@@ -48,7 +48,7 @@ Cuurrent sensor update periods:
 - uart: 16.0ms ( 62 Hz)
 
 TODO: fix not all reports getting updated, first is clearing flag?
-TODO: descide on call functions, wait for new data, or return what have
+TODO: decide on call functions, wait for new data, or return what have
 TODO: apply spi optimizations to uart ?  fix UART mis-framing (with quaternions?)
 TODO: test UART with Reset & Interrupt pins
 
@@ -68,7 +68,7 @@ import uctypes
 from collections import namedtuple
 from machine import Pin
 from micropython import const
-from utime import ticks_ms, ticks_diff, sleep_ms, sleep_us
+from utime import ticks_ms, ticks_us, ticks_diff, sleep_ms, sleep_us
 
 # Commands
 BNO_CHANNEL_SHTP_COMMAND = const(0)
@@ -728,8 +728,9 @@ class BNO08X:
         self._data_buffer_memoryview = memoryview(self._data_buffer)
         self._command_buffer: bytearray = bytearray(12)
         self._packet_slices = []
-        self.last_interrupt_ms = -1  # used to signal first interrupt
-        self.prev_interrupt_ms = -1
+        self.last_interrupt_us = -1  # used to signal first interrupt
+        self.prev_interrupt_us = -1
+        self.ms_at_interrupt = 0
         self._data_available = False
         self._sensor_epoch_ms = 0.0
         self._last_base_timestamp_us = 0
@@ -754,7 +755,7 @@ class BNO08X:
         self.reset_sensor()
 
         # if no int_pin when significant commmunication has already occured, raise error
-        if self.last_interrupt_ms == 0:
+        if self.ms_at_interrupt == 0:
             raise RuntimeError("No int_pin signals, check int_pin wiring")
 
         self._dbg("********** End __init__ *************\n")
@@ -772,11 +773,14 @@ class BNO08X:
         Interrupt handler for active-low int_pin (H_INTN). At first interrupt captures host & bno time
          * self._sensor_epoch_ms set to 0.0 ms at first interrupt
          * self._epoch_start_ms set to ticks_ms() at first interrupt
+         * self.last_interrupt_ms set for timebase calculations
+         * self.last_interrupt_us 
         """
-        if self.last_interrupt_ms == -1:
+        if self.last_interrupt_us == -1:
             self._epoch_start_ms = ticks_ms()  # self._sensor_epoch_ms = 0.0  set in __init__
-        self.prev_interrupt_ms = self.last_interrupt_ms
-        self.last_interrupt_ms = ticks_ms()
+        self.prev_interrupt_us = self.last_interrupt_us
+        self.last_interrupt_us = ticks_us()
+        self.ms_at_interrupt = ticks_ms()  
         self._data_available = True
 
     def reset_sensor(self):
@@ -1419,7 +1423,7 @@ class BNO08X:
             # host base timestamps has issues of that floats overflow for large ticks and delay's 0.1ms
             # self._sensor_ms = self.last_interrupt_ms - self._last_base_timestamp_us + delay_ms
             # Better to use ms since first interrupt
-            self._sensor_ms = ticks_diff(self.last_interrupt_ms,
+            self._sensor_ms = ticks_diff(self.ms_at_interrupt,
                                          self._epoch_start_ms) - self._last_base_timestamp_us * 0.001 + delay_ms
 
             #            print(f"{self.last_interrupt_ms=}, {self._epoch_start_ms=} {self._last_base_timestamp_us=}")
@@ -1498,7 +1502,6 @@ class BNO08X:
         if 0x28 <= report_id <= 0x29:
             # FUTURE: add two ARVR reports (4-tuple and 5-Tuple)
             raise NotImplementedError(f"ARVR Reports ({hex(report_id)}) is not supported yet.")
-            return
 
         # All other reports skipped, noted with self._dbg
         self._dbg(f"_process_report: ({hex(report_id)}) not supported.")
@@ -1693,7 +1696,7 @@ class BNO08X:
     @property
     def _data_ready(self):
         """ Returns True if at least one new interrupt seen """
-        return self.last_interrupt_ms != self.prev_interrupt_ms
+        return self.last_interrupt_us != self.prev_interrupt_us
 
 
 # must define alias after BNO08X class, so class SensorReading4 class can use this
