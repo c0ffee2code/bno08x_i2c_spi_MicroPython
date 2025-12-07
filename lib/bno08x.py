@@ -58,7 +58,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimaged angle which needs diff Q-point for that value)
 """
 
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -539,7 +539,7 @@ class Packet:
                     version = value.decode('ascii')
                     outstr += f"DBG::\t\t {byte_range} Version: {version}\n"
                 else:
-                    outtr += f"Uknown tag = {tag}\n"
+                    outstr += f"Uknown tag = {tag}\n"
 
                 # Move to next TLV using absolute byte index
                 index = value_index + tag_len
@@ -792,21 +792,17 @@ class BNO08X:
             self._soft_reset()
             reset_type = "Soft"
 
-        # todo remove loop, check_id has 3.0 sec timeout --- if doesn't happen in 3sec won't happen
-        for attempt in range(1):
-            try:
-                if self._check_id() and not self._reset_mismatch:
-                    self._dbg(f"*** {reset_type} reset successful, acknowledged with 0xF8 response")
-                    sleep_ms(100)  # allow SHTP time to settle
-                    self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
-                    self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
-                    return
-                if self._reset_mismatch:
-                    raise RuntimeError("Reset cause mismatch; check reset_pin wiring")
-            except OSError as e:
-                self._dbg(f"Attempt {attempt + 1} failed with OSError: {e}")
+        if self._check_id() and not self._reset_mismatch:
+            self._dbg(f"*** {reset_type} reset successful, acknowledged with 0xF8 response")
+            sleep_ms(100)  # allow SHTP time to settle
+            self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
+            self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
+            return
+        
+        if self._reset_mismatch:
+            raise RuntimeError("Reset cause mismatch; check reset_pin wiring")
 
-            # sleep_ms(600)  # is this excessive?
+        # sleep_ms(600)  # is this excessive?
 
         raise RuntimeError(f"Failed to get valid Product ID Response (0xf8) with {reset_type} reset")
 
@@ -1653,10 +1649,9 @@ class BNO08X:
         start_time = ticks_ms()
         self._dbg("Process packets, until get Product ID report (0xf8)...")
 
-        # Loop for a short period to process reports (like Timestamp or Command Response)
+        # Loop for a short period to process other reports (ex: Timestamp or Command Response)
         while _elapsed_sec(start_time) < 1.0:
             try:
-                # Check for enough bytes for a header (4) to prevent blocking indefinitely
                 if not self._data_ready:
                     sleep_ms(10)
                     continue
