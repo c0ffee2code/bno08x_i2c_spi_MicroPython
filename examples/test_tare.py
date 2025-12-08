@@ -2,6 +2,14 @@
 #
 # BNO08x Micropython I2C example program
 # measure quaternion, use euler_conversion, tare the sensor, and show new orientation
+#
+# Rotation Vector to use as basis for tare.
+#   0: quaternion
+#   1: game_quaternion
+#   2: geomagnetic_quaternion
+#   3: Gyro-Integrated Rotation Vector  (not implemented)
+#   4: ARVR-Stabilized Rotation Vector (not implemented)
+#   5: ARVR-Stabilized Game Rotation Vector  (not implemented)
 
 from time import sleep
 
@@ -19,45 +27,54 @@ print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
 print("===========================")
 
-bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, 20)
+bno.quaternion.enable(100)
 
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
-GOOD_SECONDS = 5
+good_before_save = 5
 start_good = None
 calibration_good = False
 status = ""
 
 # show orientation for 9 seconds
 for t in range(1, 9):
+    bno.update_sensors
+
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
     print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
+    
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
     sleep(1)
 
 print("\n\n*** Starting Countdown timer for 5 seconds, then tare the sensor\n")
 for t in range(5, 0, -1):
+    bno.update_sensors
+
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
     print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
+    
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
     sleep(1)
 
 axis = 0x07  # tare all Axis (z, y, x)
-bno.tare(axis, BNO_REPORT_ROTATION_VECTOR)
+basis = 0  # Quaternion
+bno.tare(axis, basis)
 
-print(f"\n\n*** Tare the sensor axis=({hex(axis)}, {hex(BNO_REPORT_ROTATION_VECTOR)=})\n")
+print(f"\n\n*** Tare the sensor axis=({hex(axis)}), basis={basis})\n")
 
 # show new orientation based on tare for 9 seconds
 for t in range(1, 9):
+    bno.update_sensors
+
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
     print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
+    
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
     sleep(1)
 
 # Exited loop
 bno.save_tare_data
-print("\n\t*** Tare saved to flash.")
+print("\n\t*** Tare saved")

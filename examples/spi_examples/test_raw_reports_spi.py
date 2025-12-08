@@ -1,11 +1,14 @@
 # test_raw_reports_spi.py
 #
 # BNO08x MicroPython SPI Test
-#
 # Raw device reports: raw_accelerometer, raw_magnetic, raw_gyro
 #  - raw_accelerometer, raw_magnetic -  return 3 values and time_stamp
 #  - raw_gyro - returnn 3 values, Celsius, and time_stamp
+#
 # note: timestamp is not clearly described in Ceva documentation
+#
+# Enabling reports at default frequencies
+# Raw sensors will automatically enable additional required reports
 
 from bno08x import *
 
@@ -37,7 +40,7 @@ bno.raw_gyro.enable()
 bno.print_report_period()
 
 while True:
-    # required to get data from enabled sensors
+    # Required each loop to refresh sensor data
     bno.update_sensors
         
     accel_x, accel_y, accel_z, ts_us = bno.raw_acceleration

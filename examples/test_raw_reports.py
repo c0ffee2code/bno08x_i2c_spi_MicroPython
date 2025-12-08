@@ -4,7 +4,11 @@
 # Raw device reports: raw_accelerometer, raw_magnetic, raw_gyro
 #  - raw_accelerometer, raw_magnetic -  return 3 values and time_stamp
 #  - raw_gyro - returnn 3 values, Celsius, and time_stamp
+#
 # note: timestamp is not clearly described in Ceva documentation
+#
+# Enabling reports at default frequencies
+# Raw sensors will automatically enable additional required reports
 
 from bno08x import *
 from i2c import BNO08X_I2C
@@ -18,17 +22,20 @@ bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin)
 
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
-print("===========================")
-
-bno.enable_feature(BNO_REPORT_RAW_ACCELEROMETER)
-bno.enable_feature(BNO_REPORT_RAW_MAGNETOMETER)
-bno.enable_feature(BNO_REPORT_RAW_GYROSCOPE)
+print("====================================\n")
 
 # sensor default frequencies
-bno.print_report_period()
-print("\nBNO08x sensors enabled")
+bno.raw_acceleration.enable()
+bno.raw_magnetic.enable()
+bno.raw_gyro.enable()
 
+bno.print_report_period()
+
+print("\nStart loop:")
 while True:
+    # required to get data from enabled sensors
+    bno.update_sensors
+        
     accel_x, accel_y, accel_z, ts_us = bno.raw_acceleration
     print(f"\nRaw Acceleration:  X: {accel_x:#06x}  Y: {accel_y:#06x}  Z: {accel_z:#06x} {ts_us=}")
 

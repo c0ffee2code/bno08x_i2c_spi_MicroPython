@@ -3,6 +3,9 @@
 # BNO08x MicroPython I2C Test
 #
 # I2C interface: Test simple sensor report for acceleration
+#
+# Reports enabled at 250Hz (4 msec between reports)
+# It prints so much data that your console may not keep up.
 
 from bno08x import *
 from i2c import BNO08X_I2C
@@ -16,14 +19,16 @@ bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin, debug
 
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
-print("===========================")
+print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 250)
+bno.acceleration.enable(250)
 
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
 while True:
+    # required to get data from enabled sensors
+    bno.update_sensors
+
     accel_x, accel_y, accel_z = bno.acceleration
     print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f} m/s²")
-    # Notice Gravity acceleration is down
+    # Notice Gravity acceleration downwards (~9.8 m/s²)

@@ -6,6 +6,9 @@
 # acceleration.full, magnetic.full, gryo.full, quaternion.full, quaternion.euler_full
 # full reports with accuracy and timestamps. Timestamps are microseconds (ms) in float from
 # start of sensor. The function bno.bno_start_diff(ticks) will return ms between ticks & sensor start.
+#
+# Enabling reports at high frequencies 100Hz, some sensors can not run at this rate
+# sensor provides frequencies close to what was requested
 
 from time import sleep
 
@@ -31,19 +34,16 @@ print(spi) # baudrate=3000000 required
 print("Start")
 print("====================================\n")
 
-# with 0.25s sleep in loop, we request 4Hz reports (~0.25s)
-bno.acceleration.enable()
-bno.magnetic.enable()
-bno.gyro.enable()
-bno.quaternion.enable()
+bno.acceleration.enable(100)
+bno.magnetic.enable(100)
+bno.gyro.enable(100)
+bno.quaternion.enable(100)
 
-# sensor provides frequencies that are close to what was requested
 bno.print_report_period()
 
+print("\nStart loop:")
 while True:
-    sleep(.25)
-    
-    # required to get data from enabled sensors
+    # Required each loop to refresh sensor data
     bno.update_sensors
     
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())

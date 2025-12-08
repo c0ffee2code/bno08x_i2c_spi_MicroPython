@@ -101,7 +101,7 @@ class BNO08X_I2C(BNO08X):
             return
 
         while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0 sec
-            if self.last_interrupt_us != self.prev_interrupt_us:
+            if self.last_interrupt_ms != self.prev_interrupt_ms:
                 return
             sleep_us(10)  # 10 us 
         raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")

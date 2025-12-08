@@ -4,6 +4,9 @@
 #
 # I2C interface: Test common sensor reports:
 # acceleration, magnetic, gryoscope, quaternion, quaternion.euler
+#
+# Enabling reports at 4 Hz (~0.25 sec)
+# sensor provides frequencies close to what was requested
 
 from time import sleep
 
@@ -19,20 +22,22 @@ bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin, debug
 
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
-print("===========================")
+print("====================================\n")
 
-# with 0.25s sleep in loop, we request 4Hz reports (~0.25s)
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 4)
-bno.enable_feature(BNO_REPORT_MAGNETOMETER, 4)
-bno.enable_feature(BNO_REPORT_GYROSCOPE, 4)
-bno.enable_feature(BNO_REPORT_ROTATION_VECTOR, 4)
+bno.acceleration.enable(4)
+bno.magnetic.enable(4)
+bno.gyro.enable(4)
+bno.quaternion.enable(4)
 
-# sensor provides frequencies close to what was requested
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
+print("\nStart loop:")
 while True:
-    sleep(.25)
+    # Required each loop to refresh sensor data
+    bno.update_sensors
+
+    print(f"\nsystem {ticks_ms()=}")
+
     accel_x, accel_y, accel_z = bno.acceleration
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
 

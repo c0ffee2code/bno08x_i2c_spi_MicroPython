@@ -338,16 +338,6 @@ _AVAIL_SENSOR_REPORTS = {
     #     BNO_REPORT_DEAD_RECKONING: (1 ,1, 60), #  0x2d
 }
 
-_TARE_BASIS_ENCODES = {
-    BNO_REPORT_ROTATION_VECTOR: 0,
-    BNO_REPORT_GAME_ROTATION_VECTOR: 1,
-    BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR: 2,
-    BNO_REPORT_GYRO_INTEGRATED_ROTATION_VECTOR: 3,
-    # FUTURE ARVR unimplemented reports, included with correct placeholders
-    BNO_REPORT_ARVR_STABILIZED_ROTATION_VECTOR: 4,
-    BNO_REPORT_ARVR_STABILIZED_GAME_ROTATION_VECTOR: 5,
-}
-
 # uctypes layout for standard BNO08x sensor reports
 _SENSOR_REPORT_LAYOUT = {
     "report_id": 0 | uctypes.UINT8,
@@ -777,7 +767,7 @@ class BNO08X:
                 ii. update count in _unread_report_count[report_id] += 1
             b. _handle_control_report - timestamps and vatious command responses/reports
 
-        Note: timestamp is ms(millisec) since 1st interrupt, while not sensor start, it is 1st we see bno
+        Note: timestamp is ms(millisec) since 1st BNO08x interrupt, which is close to sensor power up.
     """
 
     def __init__(self, _interface, reset_pin=None, int_pin=None, cs_pin=None, wake_pin=None, debug=False) -> None:
@@ -1004,28 +994,27 @@ class BNO08X:
         axis 0x04 (Z-only). changes the heading, but not the tilt
 
         Rotation Vector or Geomagnetic Rotation Vector will reorient all motion outputs.
-        Gaming Rotation Vector will only tare the Gaming Rotation Vector.
+           0: quaternion
+           1: game_quaternion
+           2: geomagnetic_quaternion
+           3: Gyro-Integrated Rotation Vector  (not implemented)
+           4: ARVR-Stabilized Rotation Vector (not implemented)
+           5: ARVR-Stabilized Game Rotation Vector  (not implemented)
         """
         # encode rotation vector to be tared
-        if basis in _TARE_BASIS_ENCODES:
-            encode = _TARE_BASIS_ENCODES[basis]
-        else:
+        if basis > 2:
             raise ValueError(f"Unknown Tare Basis Report ID: {basis}")
 
-        # ARVR rotation vectors currently unimplemented
-        if encode in (4, 5):
-            raise NotImplementedError("The ARVR Tare is currently unimplemented.")
-
-        self._dbg(f"TARE: using {hex(basis)=} on {axis=}, {encode=}...")
+        self._dbg(f"TARE: using {hex(basis)=} on {axis=}...")
         self._send_me_command(_ME_TARE_COMMAND,
                               [
                                   _ME_TARE_NOW,  # Perform Tare Now
                                   axis,
-                                  encode,  # rotation vector (quaternion) to be tared
+                                  basis,  # rotation vector (quaternion) to be tared
                                   0, 0, 0, 0, 0, 0,  # 6-11 Reserved
                               ]
                               )
-        return axis, encode
+        return axis, basis
 
     @property
     def clear_tare(self):
@@ -1036,7 +1025,7 @@ class BNO08X:
                                   _ME_TARE_SET_REORIENTATION,  # reorientate
                                   0, 0, 0, 0, 0, 0, 0, 0, ]  # 1-8 Reserved
                               )
-        return True
+        return
 
     def tare_reorientation(self, i, j, k, r):
         """
@@ -1050,26 +1039,22 @@ class BNO08X:
         qk = int(k * (1 << 14))
         qr = int(r * (1 << 14))
 
-        # Pack into 8 bytes, little-endian
         payload = pack("<hhhh", qi, qj, qk, qr)
         self._dbg(f"TARE: q_int = {(qi, qj, qk, qr)}")
-        self._dbg(f"TARE: raw bytes = {[hex(b) for b in payload]}")
         params = [_ME_TARE_SET_REORIENTATION] + list(payload)
         self._send_me_command(_ME_TARE_COMMAND, params)
-        return True
+        return
 
     @property
     def save_tare_data(self):
-        """
-        Save the Tare data to flash
-        """
+        """Save the Tare data to flash"""
         self._dbg(f"TARE Persist data to flash...")
         self._send_me_command(_ME_TARE_COMMAND,
                               [
                                   _ME_PERSIST_TARE,  # Persist Tare
                                   0, 0, 0, 0, 0, 0, 0, 0, ]  # 1-8 Reserved
                               )
-        return True
+        return
 
     @property
     def begin_calibration(self) -> int:
@@ -1213,7 +1198,7 @@ class BNO08X:
                         debug_view = packet.data[next_byte_index: next_byte_index + 6]
                         self._dbg(f"{debug_view=}")
 
-                        # todo remove after debut, con't like skipping
+                        # todo remove after debut, don't like skipping
                         print(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
                         print(f"INVALID REPORT ID {next_byte_index=}, next 6 bytes follows:")
                         print(f"{debug_view=}")
@@ -1333,9 +1318,9 @@ class BNO08X:
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
             accuracy = s.byte2 & 0x03
             delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
-            delay_ms = delay_raw * 0.1  # notice delay_ms if a float, we have 0.1ms accuracy
+            delay_ms = delay_raw * 0.1  # notice delay_ms is a float, we have 0.1ms accuracy
 
-            # scale sensor data by Q-point scalar, likely e1 needs a different Q-point scalar
+            # scale sensor data by Q-point scalar, likely count=5's e1 needs a different Q-point scalar
             if count == 3:
                 sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar,)
             elif count == 4:
@@ -1362,7 +1347,6 @@ class BNO08X:
             self._handle_control_report(report_id, report_bytes)
             return
 
-        # back to handling user reports
         if report_id == BNO_REPORT_STEP_COUNTER:
             self._report_values[report_id] = unpack_from("<H", report_bytes, 8)[0]
             return
@@ -1409,10 +1393,8 @@ class BNO08X:
         # All other reports skipped, noted with self._dbg
         self._dbg(f"_process_report: ({hex(report_id)}) not supported.")
         self._dbg(f"report: {report_bytes}")
-        # todo remove prints
-        print(f"_process_report: ({hex(report_id)}) not supported.")
-        print(f"report: {report_bytes}")
-        raise NotImplementedError(f"Un-implemented Report ({hex(report_id)=}) not supported yet.")
+        raise NotImplementedError(
+            f"Un-implemented Report ({hex(report_id)=}) not supported yet.\n report: {report_bytes}")
 
     # Enable given feature/sensor report on BNO08x (See SH2 6.5.4)
     def enable_feature(self, feature_id, freq=None):
@@ -1521,9 +1503,7 @@ class BNO08X:
         if getattr(self, "_product_id_received", False):
             return True
 
-        raise RuntimeError(
-            f"Timeout waiting for valid BNO Product ID response, check your {self._interface} interface"
-        )
+        raise RuntimeError(f"Timeout waiting for valid BNO Product ID response, check {self._interface} interface")
 
     def _dbg(self, *args, **kwargs) -> None:
         if self._debug:
@@ -1544,9 +1524,7 @@ class BNO08X:
         self._dbg("*** Hard Reset End, awaiting acknowledgement (0xf8)")
 
     def _soft_reset(self) -> None:
-        """
-        Send the 'reset' command packet on Executable Channel (1), Section 1.3.1 SHTP
-        """
+        """Send the 'reset' command packet on Executable Channel (1), Section 1.3.1 SHTP"""
         self._dbg(f"*** Soft Reset, Channel={BNO_CHANNEL_EXE} command={_BNO08X_CMD_RESET}, starting...")
         reset_payload = bytearray([_BNO08X_CMD_RESET])
         self._wake_signal()

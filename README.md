@@ -133,10 +133,16 @@ The examples directory shows the use of the following sensor reports. Each of th
     stability_str = bno.stability_classifier    # string of stability classification returned
     activity_str, conf = bno.activity_classifier    # string of activity classification, and integer %conf returned
 
-The following can be used to tare and manually calibrate the sensor:
+The following can be used to tare the sensor
+-   0: quaternion
+-   1: game_quaternion
+-   2: geomagnetic_quaternion
 
-    bno.tare(0x07, BNO_REPORT_ROTATION_VECTOR)
+
+    bno.tare(0x07, 0)
     bno.save_tare_data
+
+One can manually calibrate the sensor:
 
     bno.begin_calibration 
     bno.calibration_status  # wait for sensor to be ready to calibrate

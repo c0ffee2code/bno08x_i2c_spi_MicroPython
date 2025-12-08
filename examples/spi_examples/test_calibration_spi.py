@@ -1,7 +1,6 @@
 # test_calibration_spi.py
 #
 # BNO08x MicroPython SPI Test
-#
 # Calibration of three main sensors.
 # see README.md "Basic User Sensor Calibration Procedure" for recommened sensor movements
 
@@ -24,30 +23,31 @@ spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
 
 bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin, debug=False)
 
-print("Start")
 print(spi)
+print("Start")
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_ACCELEROMETER, 5)
-bno.enable_feature(BNO_REPORT_MAGNETOMETER, 5)
-bno.enable_feature(BNO_REPORT_GYROSCOPE, 5)
+bno.acceleration.enable(5)
+bno.magnetic.enable(5)
+bno.gyro.enable(5)
 
 bno.print_report_period()
-print("\nBNO08x sensors enabled")
 
-GOOD_SECONDS = 5
+good_before_save = 5
 start_good = None
 calibration_good = False
 status = ""
 
 # Begin calibration
 bno.begin_calibration
+
 # Wait sensor to be ready to calibrate
 bno.calibration_status
 
-print(f"\nCalibration: Continue for {GOOD_SECONDS} secs of \"Medium Accuracy\" to \"High Accuracy\"")
+print(f"\nCalibration: Continue for {good_before_save} secs of \"Medium Accuracy\" to \"High Accuracy\"")
 while True:
-    sleep(0.2)
+    # Required each loop to refresh sensor data
+    bno.update_sensors
 
     _, _, _, accel_accuracy, _ = bno.acceleration.full
     _, _, _, mag_accuracy, _ = bno.magnetic.full
@@ -68,11 +68,11 @@ while True:
     if calibration_good:
         if start_good is None:
             start_good = ticks_ms()
-            print(f"\nCalibration now good on all sensors. Start {GOOD_SECONDS}-second timer...\n")
+            print(f"\nCalibration now good on all sensors. Start {good_before_save}-second timer...\n")
         else:
             elapsed = ticks_diff(ticks_ms(), start_good) / 1000.0
-            if elapsed >= GOOD_SECONDS:
-                print(f"\n*** Calibration stable for {GOOD_SECONDS} secs")
+            if elapsed >= good_before_save:
+                print(f"\n*** Calibration stable for {good_before_save} secs")
                 break
     else:
         start_good = None

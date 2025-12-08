@@ -1,8 +1,7 @@
 # test_more_reports.py
 #
 # BNO08x Micropython I2C example program
-#
-# Activity, stability, and steps
+# Steps counted,  Stability classifier, Activity classifier
 
 from time import sleep
 
@@ -18,29 +17,27 @@ bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin, debug
 
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
-print("===========================")
+print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_STABILITY_CLASSIFIER)
-bno.enable_feature(BNO_REPORT_ACTIVITY_CLASSIFIER)
-bno.enable_feature(BNO_REPORT_SHAKE_DETECTOR)
-bno.enable_feature(BNO_REPORT_STEP_COUNTER)
+bno.steps.enable()
+bno.stability_classifier.enable()
+bno.activity_classifier.enable()
 
-print("BNO08x reports enabled\n")
 bno.print_report_period()
-print()
 
-while True:
-    sleep(0.1)
+last_print = ticks_ms()
+print("\nStart loop:")
+while True:    
+    # Required each loop to refresh sensor data
+    bno.update_sensors
 
-    print(f"\nTotal Steps detected: {bno.steps=}")
-    print(f"Stability classification: {bno.stability_classification=}")
+    # print out results every 0.5 sec (500 ms)
+    now = ticks_ms()
+    if ticks_diff(now, last_print) >= 500:
+        last_print = now
 
-    activity_classification = bno.activity_classification
-    most_likely = activity_classification["most_likely"]
-    confidence = activity_classification.get(most_likely, 0)  # safe default
-    print(f"Activity classification: {most_likely}, confidence: {confidence}/100")
+        print(f"\nTotal Steps detected: {bno.steps}")
+        print(f"Stability classifier: {bno.stability_classifier}")
 
-    print("sleep for 0.5 sec, then test shake")
-    sleep(0.5)
-    if bno.shake:
-        print("Shake Detected! \n")
+        activity, confidence = bno.activity_classifier
+        print(f"Activity classifier: {activity}, confidence: {confidence}%")

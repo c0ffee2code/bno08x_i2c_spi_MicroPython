@@ -4,6 +4,9 @@
 #
 # SPI interface: Test common sensor reports:
 # acceleration, magnetic, gryoscope, quaternion, quaternion.euler
+#
+# Enabling reports at 4 Hz (~0.25 sec)
+# sensor provides frequencies close to what was requested
 
 from time import sleep
 
@@ -29,7 +32,6 @@ print(spi) # baudrate=3000000 required
 print("Start")
 print("====================================\n")
 
-# with 0.25s sleep in loop, we request 4Hz reports (~0.25s)
 bno.acceleration.enable(4)
 bno.magnetic.enable(4)
 bno.gyro.enable(4)
@@ -38,10 +40,9 @@ bno.quaternion.enable(4)
 # sensor provides frequencies close to what was requested
 bno.print_report_period()
 
+print("\nStart loop:")
 while True:
-    sleep(.25)
-    
-    # required to get data from enabled sensors
+    # Required each loop to refresh sensor data
     bno.update_sensors
 
     print(f"\nsystem {ticks_ms()=}")

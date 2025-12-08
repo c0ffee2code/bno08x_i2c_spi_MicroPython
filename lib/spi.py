@@ -113,12 +113,13 @@ class BNO08X_SPI(BNO08X):
         """
         start_time = ticks_ms()
 
-        if self._wake is not None and self._wake.value() == 1:
+        # TODO just call self._wake_signal()
+        if self._wake.value() == 1:
             self._wake_signal()
 
         if self._int.value() == 0:
-            self._data_available = True  # Ensure the flag is set if we missed the interrupt
-            self._dbg("INT is active low (0) on entry.")
+            # self._data_available = True  # Ensure the flag is set if we missed the interrupt
+            # self._dbg("INT is active low (0) on entry.")
             return
 
         while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec

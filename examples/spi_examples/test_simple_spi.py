@@ -3,6 +3,9 @@
 # BNO08x MicroPython SPI Test
 #
 # SPI interface: Test simple sensor report for acceleration
+#
+# Reports enabled at 250Hz (4 msec between reports)
+# It prints so much data that your console may not keep up.
 
 from bno08x import *
 
@@ -26,12 +29,12 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-bno.acceleration.enable(250)
+bno.acceleration.enable(20)
 
 bno.print_report_period()
 
 while True:
-    # required to get data from enabled sensors
+    # Required to refresh sensor data
     bno.update_sensors
 
     accel_x, accel_y, accel_z = bno.acceleration
