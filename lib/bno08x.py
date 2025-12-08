@@ -178,20 +178,20 @@ _REPORTS_DICTIONARY = {
     0x0E: "TEMPERATURE",
     0x0F: "UNCALIBRATED_MAGNETIC_FIELD",
     0x10: "TAP_DETECTOR",
-    0x11: "STEP_COUNTER",
+    0x11: "steps",
     0x12: "SIGNIFICANT_MOTION",
-    0x13: "STABILITY_CLASSIFIER",
+    0x13: "stability_classifier",
     0x14: "raw_acceleration",
     0x15: "raw_gyro",
     0x16: "raw_magnetic",
     0x17: "SAR - reserved",
-    0x18: "STEP_DETECTOR",
+    0x18: "steps",
     0x19: "SHAKE_DETECTOR",
     0x1A: "FLIP_DETECTOR",
     0x1B: "PICKUP_DETECTOR",
     0x1C: "STABILITY_DETECTOR",
     0x1D: "0X1D unknown",
-    0x1E: "ACTIVITY_CLASSIFIER",
+    0x1E: "activity_classifier",
     0x1F: "SLEEP_DETECTOR",
     0x20: "TILT_DETECTOR",
     0x21: "POCKET_DETECTOR",
@@ -319,7 +319,7 @@ _AVAIL_SENSOR_REPORTS = {
     BNO_REPORT_RAW_MAGNETOMETER: (1, 3, 16),  # 0x16
     #     BNO_REPORT_SAR reserved  # 0x17
     BNO_REPORT_STEP_DETECTOR: (1, 1, 8),  # 0x18
-    BNO_REPORT_SHAKE_DETECTOR: (1, 1, 6),  # 0x19
+    #     BNO_REPORT_SHAKE_DETECTOR: (1, 1, 6),  # 0x19
     #     BNO_REPORT_FLIP_DETECTOR: (1, 1, 6),  # 0x1a
     #     BNO_REPORT_PICKUP_DETECTOR: (1, 1, 6),  # 0x1b
     BNO_REPORT_STABILITY_DETECTOR: (1, 1, 6),  # 0x1c
@@ -365,19 +365,7 @@ _SENSOR_REPORT_LAYOUT = {
 }
 
 _INITIAL_REPORTS = {
-    BNO_REPORT_ACTIVITY_CLASSIFIER: {
-        "Tilting": -1,
-        "most_likely": "Unknown",
-        "OnStairs": -1,
-        "On-Foot": -1,
-        "Other": -1,
-        "On-Bicycle": -1,
-        "Still": -1,
-        "Walking": -1,
-        "Unknown": -1,
-        "Running": -1,
-        "In-Vehicle": -1,
-    },
+    BNO_REPORT_ACTIVITY_CLASSIFIER: ("Unknown", 0),
     BNO_REPORT_STABILITY_CLASSIFIER: "Unknown",
     BNO_REPORT_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
     BNO_REPORT_GAME_ROTATION_VECTOR: (0.0, 0.0, 0.0, 0.0, 0, 0.0),
@@ -579,6 +567,56 @@ class Packet:
         return False
 
 
+class SensorFeature1:
+    """ 1-tuple feature manager with methods for enable and reading"""
+    __slots__ = ("_bno", "feature_id")
+
+    def __init__(self, bno_instance, feature_id):
+        self._bno = bno_instance
+        self.feature_id = feature_id
+
+    def enable(self, hertz=None):
+        """Method to enable the feature with a given report rate (hertz)."""
+        return self._bno.enable_feature(self.feature_id, hertz)
+
+    @property
+    def value(self):
+        try:
+            return self._bno._report_values[self.feature_id]
+        except KeyError:
+            raise RuntimeError(
+                f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
+
+    def __iter__(self):
+        yield self.value
+
+    def __repr__(self):
+        return f"{self.value}"
+
+
+class SensorFeature2:
+    """ 2-tuple feature manager with methods for enable, reading, and metadata."""
+    __slots__ = ("_bno", "feature_id")
+
+    def __init__(self, bno_instance, feature_id):
+        self._bno = bno_instance
+        self.feature_id = feature_id
+
+    def enable(self, hertz=None):
+        """Method to enable the feature with a given report rate (hertz)."""
+        return self._bno.enable_feature(self.feature_id, hertz)
+
+    # This method allows the object to be implicitly converted to the (v1, v2) tuple.
+    def __iter__(self):
+        """Allows direct unpacking: x, y = bno.activity_classifier"""
+        try:
+            x, y = self._bno._report_values[self.feature_id]
+            return iter((x, y))
+        except KeyError:
+            raise RuntimeError(
+                f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
+
+
 class SensorFeature3:
     """ 3-tuple feature manager with methods for enable, reading, and metadata."""
     __slots__ = ("_bno", "feature_id")
@@ -628,8 +666,7 @@ class SensorFeature4:
     4-tuple reports with optional metadata or optional full.
     bno.quaternion is really 5-tuple, but few need est angle we treat it as 4-tuple
     FUTURE: Explore if estimated angle and how to expose it for advanced users
-    bno.geomagnetic_quaternion is really 5-tuple, but few need est angle we treat it as 4-tuple
-    FUTURE: Explore if estimated angle and how to expose it for advanced users
+    bno.geomagnetic_quaternion is really 5-tuple, but few need est angle, so we treat it as 4-tuple
     """
     __slots__ = ("_bno", "feature_id")
 
@@ -792,8 +829,7 @@ class BNO08X:
 
         self._dbg("********** End __init__ *************\n")
 
-        # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _CMD_ADVERTISE (0)
-        # This will provide sensor information that is printed with debug=True
+        # send channel 0 BNO_CHANNEL_SHTP_COMMAND, send _CMD_ADVERTISE (0) to get more sensor info with debug=True
         data = bytearray(2)
         data[0] = _CMD_ADVERTISE
         data[1] = 0
@@ -806,7 +842,6 @@ class BNO08X:
          * self._sensor_epoch_ms set to 0.0 ms at first interrupt
          * self._epoch_start_ms set to ticks_ms() at first interrupt
          * self.last_interrupt_ms set for timebase calculations
-         * self.last_interrupt_us
         """
         if self.last_interrupt_us == -1:
             self._epoch_start_ms = ticks_ms()  # self._sensor_epoch_ms = 0.0  set in __init__
@@ -908,66 +943,28 @@ class BNO08X:
     @property
     def steps(self):
         """ The number of steps detected since the sensor was initialized"""
-        try:
-            self._unread_report_count[BNO_REPORT_STEP_COUNTER] = 0
-            return self._report_values[BNO_REPORT_STEP_COUNTER]
-        except KeyError:
-            raise RuntimeError("steps report not enabled, use bno,.enable_feature(BNO_REPORT_STEP_COUNTER)") from None
+        return SensorFeature1(self, BNO_REPORT_STEP_COUNTER)
 
     @property
-    def shake(self):
-        """ True if a shake was detected on any axis since the last time it was checked
-        State is "latched" once a shake is detected, it stays in "shaken" state until the value is read.
-        This prevents missing shake events, but it is not guaranteed to reflect current shake state.
+    def stability_classifier(self):
+        """Returns the sensor's assessment of its current stability:
+        * "Unknown" - unable to classify the current stability
+        * "On Table" - at rest on a stable surface with very little vibration
+        * "Stationary" - below the stable threshold but stable duration has not been met, requires gyro calibration
+        * "Stable" - met the stable threshold and duration requirements.
+        * "In motion" - sensor is moving.
         """
-        try:
-            shake_detected = self._report_values[BNO_REPORT_SHAKE_DETECTOR]
-            # clear on read
-            if shake_detected:
-                self._report_values[BNO_REPORT_SHAKE_DETECTOR] = False
-            return shake_detected
-        except KeyError:
-            raise RuntimeError("shake report not enabled, use bno.enable_feature(BNO_REPORT_SHAKE_DETECTOR)") from None
+        return SensorFeature1(self, BNO_REPORT_STABILITY_CLASSIFIER)
 
     @property
-    def stability_classification(self):
-        """Returns the sensor's assessment of its current stability, one of:
-        * "Unknown" - The sensor is unable to classify the current stability
-        * "On Table" - The sensor is at rest on a stable surface with very little vibration
-        * "Stationary" -  The sensor’s motion is below the stable threshold but\
-           - the stable duration requirement has not been met. only available if gyro calibration is enabled
-        * "Stable" - The sensor’s motion has met the stable threshold and duration requirements.
-        * "In motion" - The sensor is moving.
+    def activity_classifier(self):
+        """Returns the sensor's assessment of the activity:
+        * "Unknown", "In-Vehicle", "On-Bicycle", "On-Foot", "Still"
+        * "Tilting", "Walking"     "Running",    "On Stairs"
         """
-        try:
-            stability_classification = self._report_values[BNO_REPORT_STABILITY_CLASSIFIER]
-            return stability_classification
-        except KeyError:
-            raise RuntimeError(
-                "stability classification report not enabled, use bno.enable_feature(BNO_REPORT_STABILITY_CLASSIFIER)") from None
+        return SensorFeature2(self, BNO_REPORT_ACTIVITY_CLASSIFIER)
 
-    @property
-    def activity_classification(self):
-        """Returns the sensor's assessment of the activity that is creating the motions\
-        that it is sensing, one of:
-        * "Unknown"
-        * "In-Vehicle"
-        * "On-Bicycle"
-        * "On-Foot"
-        * "Still"
-        * "Tilting"
-        * "Walking"
-        * "Running"
-        * "On Stairs"
-        """
-        try:
-            activity_classification = self._report_values[BNO_REPORT_ACTIVITY_CLASSIFIER]
-            return activity_classification
-        except KeyError:
-            raise RuntimeError(
-                "activity classification report not enabled, use bno.enable_feature(BNO_REPORT_ACTIVITY_CLASSIFIER)") from None
-
-    # User helper functions
+    # =============  User helper functions  =============
     def bno_start_diff(self, ticks: int) -> int:
         """ Return milliseconds difference between ticks and sensor startup """
         return ticks_diff(ticks, self._epoch_start_ms)
@@ -1037,15 +1034,13 @@ class BNO08X:
         self._send_me_command(_ME_TARE_COMMAND,
                               [
                                   _ME_TARE_SET_REORIENTATION,  # reorientate
-                                  0, 0, 0, 0, 0, 0, 0, 0,  # 1-8 Reserved
-                              ]
+                                  0, 0, 0, 0, 0, 0, 0, 0, ]  # 1-8 Reserved
                               )
         return True
 
     def tare_reorientation(self, i, j, k, r):
         """
-        Send quaternion reorientation for tare.
-        Quaternion components are sent as 16-bit signed ints (Q14), LSB first.
+        Send quaternion reorientation for tare. Can use any of the 3 quaternions.
         Used to set orientation of sensor for example of sensor pcb is mounted vertically
         you can use this to set left edge down, and the other directions.
         """
@@ -1072,8 +1067,7 @@ class BNO08X:
         self._send_me_command(_ME_TARE_COMMAND,
                               [
                                   _ME_PERSIST_TARE,  # Persist Tare
-                                  0, 0, 0, 0, 0, 0, 0, 0,  # 1-8 Reserved
-                              ]
+                                  0, 0, 0, 0, 0, 0, 0, 0, ]  # 1-8 Reserved
                               )
         return True
 
@@ -1091,15 +1085,14 @@ class BNO08X:
                                   _ME_CAL_CONFIG,
                                   0,  # calibrate planar acceleration
                                   0,  # 'on_table' calibration
-                                  0, 0, 0,  # reserved
-                              ]
+                                  0, 0, 0, ]  # reserved
                               )
         self._calibration_started = False
         return
 
     def calibration_status(self) -> int:
         """
-        Check if Request for manual calibration accepted by sensor
+        Check if fequest for manual calibration accepted by sensor
         Wait until calibration ready, Send request for status command, wait for response.
         """
         self._send_me_command(_ME_CALIBRATE_COMMAND, [0, 0, 0, _ME_GET_CAL, 0, 0, 0, 0, 0, ])
@@ -1327,11 +1320,9 @@ class BNO08X:
     def _process_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
         Process reports both sensor and control reports
-
         Extracted accuracy and delay from sensor report (100usec ticks)
         Multiple reports are processed in the order they appear in the packet buffer.
-        Last sensor report's value over-write previous in this packet.
-        The first (oldest) report sets self._report_values[report_id],
+        Last sensor report's value over-write previous in this packet, ex: self._report_values[report_id],
         """
         # handle typical sensor reports first
         if 0x01 <= report_id <= 0x09:
@@ -1341,32 +1332,16 @@ class BNO08X:
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
             accuracy = s.byte2 & 0x03
-            # delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
-            delay_raw = ((s.byte2 & 0xFC) << 6) | s.byte3
+            delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
             delay_ms = delay_raw * 0.1  # notice delay_ms if a float, we have 0.1ms accuracy
 
             # scale sensor data by Q-point scalar, likely e1 needs a different Q-point scalar
             if count == 3:
-                sensor_data = (
-                    s.v1 * scalar,
-                    s.v2 * scalar,
-                    s.v3 * scalar,
-                )
+                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar,)
             elif count == 4:
-                sensor_data = (
-                    s.v1 * scalar,
-                    s.v2 * scalar,
-                    s.v3 * scalar,
-                    s.v4 * scalar,
-                )
-            elif count == 5:
-                sensor_data = (
-                    s.v1 * scalar,
-                    s.v2 * scalar,
-                    s.v3 * scalar,
-                    s.v4 * scalar,
-                    s.e1,
-                )
+                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar, s.v4 * scalar,)
+            elif count == 5:  # likely s.e1 needs to be multiplied by diff Q-point scalar
+                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar, s.v4 * scalar, s.e1,)
             else:
                 raise ValueError(f"Unexpected tuple length {count}")
 
@@ -1392,15 +1367,6 @@ class BNO08X:
             self._report_values[report_id] = unpack_from("<H", report_bytes, 8)[0]
             return
 
-        if report_id == BNO_REPORT_SHAKE_DETECTOR:
-            # shake in X, Y, or Z axes (mask lower 3 bits: 0x07), latch shake
-            shake_bitfield = unpack_from("<H", report_bytes, 4)[0]
-            shake_detected = (shake_bitfield & 0x07) != 0
-            if shake_detected:
-                previous = self._report_values.get(BNO_REPORT_SHAKE_DETECTOR, False)
-                self._report_values[BNO_REPORT_SHAKE_DETECTOR] = True
-            return
-
         if report_id == BNO_REPORT_STABILITY_CLASSIFIER:
             classification_bitfield = unpack_from("<B", report_bytes, 4)[0]
             stability_classification = ["Unknown", "On Table", "Stationary", "Stable", "In motion"][
@@ -1410,15 +1376,12 @@ class BNO08X:
 
         # Activitity Classifier in SH-2 (6.5.36)
         if report_id == BNO_REPORT_ACTIVITY_CLASSIFIER:
-            end_and_page_number, most_likely = unpack_from("<BB", report_bytes, 4)
-            page_number = end_and_page_number & 0x7F
-            confidences = unpack_from("<BBBBBBBBB", report_bytes, 6)
-            activity_classification = {"most_likely": ACTIVITIES[most_likely]}
-            for idx, raw_confidence in enumerate(confidences):
-                confidence = (10 * page_number) + raw_confidence
-                activity_string = ACTIVITIES[idx]
-                activity_classification[activity_string] = confidence
-            self._report_values[BNO_REPORT_ACTIVITY_CLASSIFIER] = activity_classification
+            end_and_page, most_likely_idx = unpack_from("<BB", report_bytes, 4)
+            page = end_and_page & 0x7F
+            raw_conf = unpack_from("<9B", report_bytes, 6)
+            confidence = page * 10 + raw_conf[most_likely_idx]
+            activity_name = ACTIVITIES[most_likely_idx]
+            self._report_values[BNO_REPORT_ACTIVITY_CLASSIFIER] = activity_name, confidence
             return
 
         # Raw accelerometer and Raw Magnetometer: returns 4-tuple: x, y, z, and time_stamp
@@ -1507,11 +1470,6 @@ class BNO08X:
         except RuntimeError:
             raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {hex(feature_id)}")
 
-    # TODO remove, because enable_feature now returns them
-    def report_period_us(self, feature_id):
-        """ return a report's period in us (microseconds, not ms milliseconds)"""
-        return self._report_periods_dictionary_us[feature_id]
-
     def print_report_period(self):
         """ Print out heading and row for each report enabled. """
         if not self._report_periods_dictionary_us:
@@ -1520,7 +1478,7 @@ class BNO08X:
 
         print(f"Enabled Report Periods and Hz:")
         for feature_id in self._report_periods_dictionary_us.keys():
-            period_ms = self.report_period_us(feature_id) / 1000.0
+            period_ms = self._report_periods_dictionary_us[feature_id] / 1000.0
             print(f"\t{_REPORTS_DICTIONARY[feature_id]}\t{period_ms:.1f} ms, {1_000 / period_ms:.1f} Hz")
 
     def _check_id(self):
@@ -1540,7 +1498,7 @@ class BNO08X:
         self._wake_signal()
         self._send_packet(_BNO_CHANNEL_CONTROL, data)
 
-        # On channel 2, read packets until _COMMAND_RESPONSE (0xf1)
+        # On channel 2, read/skip packets until _COMMAND_RESPONSE (0xf1)
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < 3.0:
             try:
@@ -1553,13 +1511,13 @@ class BNO08X:
                 if len(packet.data) == 0:
                     continue
                 if packet.report_id == _COMMAND_RESPONSE:
-                    # Handle packet to process _REPORT_PRODUCT_ID_RESPONSE
+                    # Handle packet to process _REPORT_PRODUCT_ID_RESPONSE reports (0xf8)
                     self._handle_packet(packet)
                     break
             except (RuntimeError, PacketError):
                 continue
 
-        # see that _REPORT_PRODUCT_ID_RESPONSE (0xf8) received
+        # check if _REPORT_PRODUCT_ID_RESPONSE (0xf8) received
         if getattr(self, "_product_id_received", False):
             return True
 

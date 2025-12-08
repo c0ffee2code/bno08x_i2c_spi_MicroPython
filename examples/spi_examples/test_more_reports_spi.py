@@ -4,7 +4,7 @@
 #
 # Activity, stability, and steps
 
-from time import sleep
+from time import ticks_ms
 
 from bno08x import *
 from machine import SPI, Pin
@@ -27,27 +27,28 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-bno.enable_feature(BNO_REPORT_STABILITY_CLASSIFIER)
-bno.enable_feature(BNO_REPORT_ACTIVITY_CLASSIFIER)
-bno.enable_feature(BNO_REPORT_SHAKE_DETECTOR)
-bno.enable_feature(BNO_REPORT_STEP_COUNTER)
+bno.steps.enable()
+bno.stability_classifier.enable()
+bno.activity_classifier.enable()
+
+# bno.shake.enable()
 
 print("BNO08x reports enabled\n")
 bno.print_report_period()
 print()
 
-while True:
-    sleep(0.1)
+last_print = ticks_ms()
+while True:    
+    # required to get data from enabled sensors
+    bno.update_sensors
 
-    print(f"\nTotal Steps detected: {bno.steps=}")
-    print(f"Stability classification: {bno.stability_classification=}")
+    # Check if 1 second has passed
+    now = ticks_ms()
+    if ticks_diff(now, last_print) >= 500:
+        last_print = now
 
-    activity_classification = bno.activity_classification
-    most_likely = activity_classification["most_likely"]
-    confidence = activity_classification.get(most_likely, 0)  # safe default
-    print(f"Activity classification: {most_likely}, confidence: {confidence}/100")
+        print(f"\nTotal Steps detected: {bno.steps}")
+        print(f"Stability classifier: {bno.stability_classifier}")
 
-    print("sleep for 0.5 sec, then test shake")
-    sleep(0.5)
-    if bno.shake:
-        print("Shake Detected! \n")
+        activity, confidence = bno.activity_classifier
+        print(f"Activity classifier: {activity}, confidence: {confidence}%")

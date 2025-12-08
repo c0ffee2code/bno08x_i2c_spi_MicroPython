@@ -66,11 +66,10 @@ Primary sensor report constants:
     bno.quaternion.enable()
     bno.geomagnetic_quaternion.enable()
     bno.game_quaternion.enable()
-
-        BNO_REPORT_STEP_COUNTER
-        BNO_REPORT_SHAKE_DETECTOR
-        BNO_REPORT_STABILITY_CLASSIFIER
-        BNO_REPORT_ACTIVITY_CLASSIFIER
+    
+    bno.steps.enable()
+    bno.stability_classifier.enable()
+    bno.activity_classifier.enable()
 
 BNO08x documentation uses the words "ROTATION_VECTOR", and we honor that in several of the above constants. 
 Most people refer to these as quaternions, which is easier to understand in code.
@@ -130,10 +129,9 @@ The examples directory shows the use of the following sensor reports. Each of th
     i, j, k, real = bno.geomagnetic_quaternion  # rotation 4-tuple of i,j,k,real float returned
     i, j, k, real = bno.game_quaternion         # rotation 4-tuple of i,j,k,real float returned
 
-    num = bno.steps                     # number of steps since sensor initialization returned
-    state = bno.shake                   # boolean of state since last read returned
-    stability_str = bno.stability_classification    # string of stability classification returned
-    activity_str = bno.activity_classification      # string of activity classification returned
+    num = bno.steps                             # number of steps since sensor initialization returned
+    stability_str = bno.stability_classifier    # string of stability classification returned
+    activity_str, conf = bno.activity_classifier    # string of activity classification, and integer %conf returned
 
 The following can be used to tare and manually calibrate the sensor:
 
