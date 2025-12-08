@@ -42,12 +42,11 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-Cuurrent sensor update periods:
-- spi:   2.9ms (333 Hz)
-- i2c:   3.8ms (263 Hz)
-- uart: 16.0ms ( 62 Hz)
+Current best sensor update periods - BNO086 responded with 2ms update frequeny:
+- spi:   2.1ms (476 Hz)
+- i2c:   3.3ms (303 Hz)
+- uart:  ?.?ms ( ?? Hz)
 
-TODO: fix not all reports getting updated, first is clearing flag?
 TODO: decide on call functions, wait for new data, or return what have
 TODO: How to handle unimplemented reports that are sent by sensor? Pass them without error?
 TODO: apply spi optimizations to uart ?  fix UART mis-framing (with quaternions?)
@@ -56,10 +55,10 @@ TODO: test UART with Reset & Interrupt pins
 Possible future projects:
 FUTURE: explore adding simple 180 degree calibration(0x0c), page 55 SH-2, but will need move request reports
 FUTURE: include estimated ange in full quaternion implementation, maybe make new modifier bno.quaternion.est_angle
-FUTURE: process two ARVR reports (rotation vector has estimaged angle which needs diff Q-point for that value)
+FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.8.4"
+__version__ = "0.9.0"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
