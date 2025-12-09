@@ -85,13 +85,17 @@ class BNO08X_UART(BNO08X):
         sleep_us(100)
         self._uart.write(b"\x01")  # SHTP byte
         sleep_us(100)
+        
+        # TODO Verify this works
+        if self._debug:
+            packet = Packet(self._data_buffer)
+            self._dbg(f"  Sending Packet *************{packet}")
 
         # writing byte-by-byte with the specified delay
         for b in self._data_buffer[0:write_length]:
             byte_buffer[0] = b
             self._uart.write(byte_buffer)
             sleep_us(100)
-
         self._uart.write(b"\x7e")  # end byte
 
         self._tx_sequence_number[channel] = (self._tx_sequence_number[channel] + 1) % 256
@@ -161,7 +165,7 @@ class BNO08X_UART(BNO08X):
             if b == 0x7E:
                 break
 
-        # 3. Read the SHTP Protocol ID (0x01)
+        # Read the SHTP Protocol ID (0x01)
         data = self._uart.read(1)
         
         #print(f" SHTP protocol {data=}")
@@ -186,19 +190,25 @@ class BNO08X_UART(BNO08X):
     def _read_packet(self, wait=None):
         self._read_header()
         header = Packet.header_from_buffer(self._data_buffer)
-        packet_byte_count = header.packet_byte_count
+        raw_packet_bytes = header.packet_byte_count
         channel = header.channel_number
         sequence_number = header.sequence_number
-
         self._rx_sequence_number[channel] = sequence_number
-        if packet_byte_count == 0:
-            raise PacketError("No packet available")
+        
+        # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
+        if raw_packet_bytes == 0:
+            self._dbg("_read_packet: packet_bytes=0, returning None.")
+            return None
+        if raw_packet_bytes == 0xFFFF:
+            raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
+        
+        packet_bytes = raw_packet_bytes & 0x7FFF
 
-        if packet_byte_count > DATA_BUFFER_SIZE:
-            self._data_buffer = bytearray(packet_byte_count)
+        if packet_bytes > DATA_BUFFER_SIZE:
+            self._data_buffer = bytearray(packet_bytes)
 
         # skip 4 header bytes since they've already been read
-        self._read_into(self._data_buffer, start=4, end=packet_byte_count)
+        self._read_into(self._data_buffer, start=4, end=packet_bytes)
 
         data = self._uart.read(1)
         if not data:
@@ -221,9 +231,7 @@ class BNO08X_UART(BNO08X):
 
     @property
     def _data_ready(self):
-        """
-        UART variant also has uart.any() fallback
-        """
+        """UART variant also has uart.any() fallback"""
         if self._data_available:
             return True
         
@@ -285,6 +293,8 @@ class BNO08X_UART(BNO08X):
 
         self._dbg("End Soft RESET in uart.py")
 
+
+    #TODO Turn back to _hard_reset, then debug check_id with uart
     def reset_sensor(self) -> None:
         """
         Hardware reset the sensor to an initial state
@@ -341,5 +351,7 @@ class BNO08X_UART(BNO08X):
         self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
         self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
 
+ 
+        self._dbg("***UART reset_sensor(nee _hard_reset) doesn't ACK 0xf8 reports received")
         self._dbg("*** Hard Reset acknowledged in uart.py, sequence numbers reset")
         # Control returns to bno08x.py:reset_sensor which calls _check_id()
