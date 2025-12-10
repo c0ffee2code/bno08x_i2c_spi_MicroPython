@@ -91,21 +91,24 @@ class BNO08X_I2C(BNO08X):
 
     def _wait_for_int(self):
         """
-        Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
+        Waits for BNO08x int_pin to assert (go low) by monitoring microsecond timestamp set by the Interrupt.
         """
+        initial_int_time = self.last_interrupt_us
         start_time = ticks_ms()
 
-        if self._int.value() == 0:
-            self._data_available = True  # Ensure the flag is set if we missed the interrupt
-            self._dbg("INT is active low (0) on entry.")
-            return
-
-        while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0 sec
-            if self.last_interrupt_us != self.prev_interrupt_us:
-                return
-            sleep_us(10)  # 10 us 
-        raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
-    
+        # Check if the interrupt is already active (was missed)
+        if self._int_pin.value() == 0:
+            # * comment out self._dbg for normal operation, adds delay even with debug=False
+            # self._dbg("int_piun is active low (0) on entry.")
+            return 
+        
+        # Poll the interrupt timestamp for a change
+        while ticks_diff(ticks_ms(), start_time) < 10: 
+            if self.last_interrupt_us != initial_int_time:
+                return 
+            sleep_us(10)
+        
+        raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
 
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
@@ -126,9 +129,11 @@ class BNO08X_I2C(BNO08X):
         return self._tx_sequence_number[channel]
 
     def _read_packet(self, wait=None):
-        wait = bool(wait)  # both wait=None wait=False are non-blocking
-        if wait:
-            self._wait_for_int()
+        wait = bool(wait)  # both wait=None wait=False are non-blocking        
+        # In I2C, data is ready if the INT pin is low OR if the user requested to wait.
+        if wait or self._int.value() == 0:
+            if self._int.value() != 0:
+                self._wait_for_int() # Will raise a timeout if no new interrupt after 10ms
 
         # Read 4-byte SHTP header and process
         header_mv = memoryview(self._data_buffer)[:4]
