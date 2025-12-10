@@ -71,7 +71,6 @@ class BNO08X_SPI(BNO08X):
         cs_pin: SPI CS pin to signal reads or writes
         reset_pin: optionl reset to BNO08x
         int_pin=None: optional int_pin to get signal when BNO08x is ready
-        baudrate: (default 1 MHz, max 3 MHz)
         debug: prints very detailed logs, primarily for driver debug & development.
     """
 
@@ -89,26 +88,26 @@ class BNO08X_SPI(BNO08X):
             raise RuntimeError("wake_pin is required for SPI operation")
         if not isinstance(wake_pin, Pin):
             raise TypeError("wake_pin must be a Pin object, not {type(wake_pin)}")
-        self._wake = wake_pin
-        self._wake.value(1)  # wake_pin must be high to select SPI operation
+        self._wake_pin = wake_pin
+        self._wake_pin.value(1)  # wake_pin must be high to select SPI operation
 
         if cs_pin is None:
             raise RuntimeError("cs_pin is required for SPI operation")
         if not isinstance(cs_pin, Pin):
             raise TypeError("cs_pin must be a Pin object, not {type(cs_pin)}")
-        self._cs = cs_pin
-        self._cs.value(1)  # ensure CS is de-asserted before communication
+        self._cs_pin = cs_pin
+        self._cs_pin.value(1)  # ensure CS is de-asserted before communication
 
         if int_pin is None:
             raise RuntimeError("int_pin is required for SPI operation")
         if not isinstance(int_pin, Pin):
             raise TypeError("int_pin must be a Pin object, not {type(int_pin)}")
-        self._int = int_pin
-        self._int.init(Pin.IN, Pin.PULL_UP)  # guarantee int_pin is properly set up
+        self._int_pin = int_pin
+        self._int_pin.init(Pin.IN, Pin.PULL_UP)  # guarantee int_pin is properly set up
 
         if reset_pin is not None and not isinstance(reset_pin, Pin):
             raise TypeError(f"reset_pin (RST) must be a Pin object or None, not {type(reset_pin)}")
-        self._reset = reset_pin
+        self._reset_pin = reset_pin
 
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
@@ -118,22 +117,23 @@ class BNO08X_SPI(BNO08X):
         Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
         This resolves the 10ms starvation issue caused by polling.
         """
+        initial_int_time = self.last_interrupt_us
         start_time = ticks_ms()
+  
+        self._wake_signal()
 
-        # TODO just call self._wake_signal()
-        if self._wake.value() == 1:
-            self._wake_signal()
-
-        if self._int.value() == 0:
+        if self._int_pin.value() == 0:
             # self._data_available = True  # Ensure the flag is set if we missed the interrupt
             # self._dbg("INT is active low (0) on entry.")
             return
 
-        while ticks_diff(ticks_ms(), start_time) < 3000:  # 3.0sec
-            if self.last_interrupt_us != self.prev_interrupt_us:
-                return
-            sleep_us(10)  # 10 us
-        raise RuntimeError("Timeout (3.0s) waiting for INT flag to be set")
+        # Poll the interrupt timestamp for a change
+        while ticks_diff(ticks_ms(), start_time) < 10: 
+            if self.last_interrupt_us != initial_int_time:
+                return 
+            sleep_us(10)
+        
+        raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
 
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
@@ -148,149 +148,84 @@ class BNO08X_SPI(BNO08X):
             packet = Packet(self._data_buffer)
             self._dbg(f"  Sending Packet *************{packet}")
 
-        self._cs.value(0)
+        self._cs_pin.value(0)
         sleep_us(1)
         self._spi.write(mv[:write_length])  # also zero-copy
-        self._cs.value(1)
+        self._cs_pin.value(1)
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
         return
 
-    def _read_header(self, wait=True):
-        """Reads the first 4 bytes available as a header"""
-        if wait:
-            self._wait_for_int()
-        else:
-            # only attempt the SPI read if INT is LOW.
-            if self._int.value() != 0:
-                raise PacketError("INT pin high, aborting read: No data ready.")
+# TODO DEBUG - It seems this merged _read_header & _read_packet should be faster
+#
+    def _read_packet(self, wait=None):
+        wait = bool(wait)  # both wait=None wait=False are non-blocking        
+        if wait or self._int_pin.value() == 0:
+            if self._int_pin.value() != 0:
+                self._wait_for_int() # timeout if no new interrupt after 10ms
 
-        self._cs.value(0)
+        # Buffer for Read 4-byte SHTP header and process
+        header_mv = memoryview(self._data_buffer)[0:4]
+
+        # ---start--- SPI Header read 
+        self._cs_pin.value(0)
         sleep_us(1)
-        mv = memoryview(self._data_buffer)
-        self._spi.readinto(mv[:4], 0x00)
-        self._cs.value(1)
+        self._spi.readinto(header_mv, 0x00)
+        self._cs_pin.value(1)
+        # ----end---- SPI Header read 
 
-        # header_view here seems required - weird, unknown side effect
-        header_view = uctypes.struct(uctypes.addressof(mv), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-
-        # * commented out self._dbg in time critical loops for normal operation
-        #  self._dbg(f"_read_packet header: {[hex(x) for x in self._data_buffer[0:4]]}")
-
-    def _read_packet(self, wait=True):
-        self._read_header(wait=wait)
-
-        mv = memoryview(self._data_buffer)[:4]
-        header_view = uctypes.struct(uctypes.addressof(mv[:4]), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-
+        header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
         raw_packet_bytes = header_view.packet_bytes
         channel = header_view.channel
         seq = header_view.sequence
-        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+        
+        # * comment out self._dbg for normal operation, adds delay even with debug=False
+        print(f" _read_packet Header {hex(raw_packet_bytes)}, {channel=}, {seq=}")
 
-        # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
-        if raw_packet_bytes == 0:
-            self._dbg("_read_packet: packet_bytes=0, returning None.")
+        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+ 
+        if raw_packet_bytes == 0:  # Fast skip
+            # self._dbg("_read_packet: packet_bytes=0, returning None.")
             return None
-        if raw_packet_bytes == 0xFFFF:
+        if raw_packet_bytes == 0xFFFF:  # bad sensor 
             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
-        continuation = bool(raw_packet_bytes & 0x8000)
 
-        if packet_bytes > DATA_BUFFER_SIZE:  # if packet too big, reallocate, this is normal.
+        if packet_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(packet_bytes)
 
-        self._cs.value(0)
-        sleep_us(1)
-        mv = memoryview(self._data_buffer)[0:packet_bytes]
-        self._spi.readinto(mv, 0x00)
-        self._cs.value(1)
+        if packet_bytes <= _SHTP_MAX_CARGO_PACKET_BYTES:
+            mv = memoryview(self._data_buffer)
 
-        #         continuation = bool(raw_packet_bytes & 0x8000)
-        #         if continuation:
-        #             self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
-        #             # raise PacketError("read partial packet")
+            # ---start--- SPI Payload read
+            self._cs_pin.value(0)
+            sleep_us(1)
+            self._spi.readinto(mv, 0x00)
+            self._cs_pin.value(1)  
+            # ----end---- SPI Payload read 
 
-        new_packet = Packet(self._data_buffer)
+        else:
+            print(f"FRAGMENTED PACKET - {packet_bytes=} and {_SHTP_MAX_CARGO_PACKET_BYTES=}")
+            print(f"***** NEED to implement multi-packet reads, erasing header")
+            print(f"* Have yet to see packet_bytes > 193 bytes, algorithm sketched out")
+            print(f"* Ceva and others have no clear documentation of the max cargo bytes value")
+            print(f"{self._data_buffer}")
+            raise NotImplementedError("The multi-packet reads are NOT unimplemented. TODO")
+
+            # at startup some first packets have continuation, likely missed the packet before
+            # when the payload bytes are longer than the xxxxx then we must processess the next packet
+            # this should have continuation bit set
+            continuation = bool(raw_packet_bytes & 0x8000)
+            if continuation:
+                self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
+                # raise PacketError("read partial packet")
+
+        new_packet = Packet(self._data_buffer[:packet_bytes])
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
 
-        # * comment out self._dbg for normal operation, adds 8ms delay even with debug=False
+        # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
         self._dbg(f" Received Packet *************{new_packet}")
 
         return new_packet
-
-# TODO DEBUG - It seems this merged _read_header & _read_packet should be faster
-# BUT... it seems to sporatically have errors that the above code doesn't have - Why?
-#     def _read_packet(self, wait=None):
-#         wait = bool(wait)  # both wait=None wait=False are non-blocking
-#         if wait or self._int_pin.value() == 0:
-#             if self._int_pin.value() != 0:
-#                 self._wait_for_int()  # timeout if no new interrupt after 10ms
-#
-#         # Buffer for Read 4-byte SHTP header and process
-#         header_mv = memoryview(self._data_buffer)[0:4]
-#
-#         # ---start--- SPI Header read
-#         self._cs_pin.value(0)
-#         sleep_us(1)
-#         self._spi.readinto(header_mv, 0x00)
-#         self._cs_pin.value(1)
-#         # ----end---- SPI Header read
-#
-#         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-#         raw_packet_bytes = header_view.packet_bytes
-#         channel = header_view.channel
-#         seq = header_view.sequence
-#
-#         # * comment out self._dbg for normal operation, adds delay even with debug=False
-#         # print(f" _read_packet Header {hex(raw_packet_bytes)}, {channel=}, {seq=}")
-#
-#         self._rx_sequence_number[channel] = seq  # SH2 Sequence number
-#
-#         if raw_packet_bytes == 0:  # Fast skip
-#             # self._dbg("_read_packet: packet_bytes=0, returning None.")
-#             return None
-#         if raw_packet_bytes == 0xFFFF:  # bad sensor
-#             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
-#
-#         packet_bytes = raw_packet_bytes & 0x7FFF
-#
-#         if packet_bytes > len(self._data_buffer):
-#             self._data_buffer = bytearray(packet_bytes)
-#
-#         if packet_bytes <= _SHTP_MAX_CARGO_PACKET_BYTES:
-#             mv = memoryview(self._data_buffer)
-#
-#             # ---start--- SPI Payload read
-#             self._cs_pin.value(0)
-#             sleep_us(1)
-#             self._spi.readinto(mv, 0x00)
-#             self._cs_pin.value(1)
-#             # ----end---- SPI Payload read
-#
-#         else:
-#             print(f"FRAGMENTED PACKET - {packet_bytes=} and {_SHTP_MAX_CARGO_PACKET_BYTES=}")
-#             print(f"***** NEED to implement multi-packet reads, erasing header")
-#             print(f"* Have yet to see packet_bytes > 193 bytes, algorithm sketched out")
-#             print(f"* Ceva and others have no clear documentation of the max cargo bytes value")
-#             print(f"{self._data_buffer}")
-#             raise NotImplementedError("The multi-packet reads are NOT unimplemented. TODO")
-#
-#             # at startup some first packets have continuation, likely missed the packet before
-#             # when the payload bytes are longer than the xxxxx then we must processess the next packet
-#             # this should have continuation bit set
-#             continuation = bool(raw_packet_bytes & 0x8000)
-#             if continuation:
-#                 self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
-#                 # raise PacketError("read partial packet")
-#
-#         new_packet = Packet(self._data_buffer[:packet_bytes])
-#         seq = new_packet.header.sequence_number
-#         self._rx_sequence_number[channel] = seq  # report sequence number
-#
-#         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
-#         # self._dbg(f" Received Packet *************{new_packet}")
-#
-#         return new_packet
