@@ -42,16 +42,12 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-Current best sensor update periods - BNO086 responded with quaternion with 1ms update frequeny:
-- spi:   1.2ms (833 Hz), we seem to have 0.2ms overhead in processing report
-- i2c:   1.2ms (833 Hz),
+Current best sensor update periods - BNO086 responded with 2ms update frequeny:
+- spi:   2.1ms (476 Hz)
+- i2c:   3.3ms (303 Hz)
 - uart:  ?.?ms ( ?? Hz)
-This is more complicated because if the BNO086 packages multiple sensor reports from the same sensor,
-this driver reports the most recent. When the driver has one report in a package there is a short time
-when it releases it to be reported on. If there are several reports in a package, when control goes back
-the driver reports the last result, so it may appear they are coming at a slower frequency.
 
-TODO: determine interaction between bno.update_sensors and sensor reporting
+TODO: decide on call functions, wait for new data, or return what have
 TODO: How to handle unimplemented reports that are sent by sensor? Pass them without error?
 TODO: apply spi optimizations to uart ?  fix UART mis-framing (with quaternions?)
 TODO: test UART with Reset & Interrupt pins
@@ -231,7 +227,7 @@ _REPORTS_DICTIONARY = {
 _DEFAULT_REPORT_INTERVAL = const(50_000)  # 50,000us = 50ms, 20 MHz
 _QUAT_READ_TIMEOUT = 0.5  # timeout in seconds
 _PACKET_READ_TIMEOUT = 2.0  # timeout in seconds
-_FEATURE_ENABLE_TIMEOUT = 3.0  # timeout in seconds
+_FEATURE_ENABLE_TIMEOUT = 2.0  # timeout in seconds
 _DEFAULT_TIMEOUT = 2.0  # timeout in seconds
 _CALIBRATION_TIMEOUT = 5.0  # 10 sec
 _TIMEOUT_SHORT_MS = 100  # short sensor knows ME status, just needs to package and send (few ms)
@@ -385,10 +381,11 @@ DATA_BUFFER_SIZE = const(512)  # data buffer size. obviously eats ram
 PacketHeader = namedtuple(
     "PacketHeader",
     [
+        "packet_byte_count",
         "channel_number",
         "sequence_number",
-        "data_length",
-        "packet_byte_count",
+        "report_id_number",
+
     ],
 )
 
@@ -436,27 +433,29 @@ class Packet:
     """ A class representing a Sensor Hub Transport Packet (4-byte headers) """
 
     def __init__(self, packet_bytes: bytearray) -> None:
+        """header = PacketHeader(packet_byte_count, channel_number, sequence_number, report_id_number)"""
         self.header = self.header_from_buffer(packet_bytes)
-        data_end_index = self.header.data_length + 4
-        self.data = packet_bytes[4:data_end_index]
+        self.data = packet_bytes[4:self.byte_count]
 
     def __str__(self) -> str:
-        length = self.header.packet_byte_count
+        length = self.byte_count
         outstr = "\n\t\t********** Packet *************\n"
         outstr += "DBG::\t\tHeader:\n"
-        outstr += f"DBG::\t\t Data Len: {self.header.data_length}\n"
-        outstr += f"DBG::\t\t Channel: {channels[self.channel_number]} ({hex(self.channel_number)})\n"
-        outstr += f"DBG::\t\t Sequence: {self.header.sequence_number}\n"
+        outstr += f"DBG::\t\t Packet Len: {length} ({hex(length)})\n"
+        outstr += f"DBG::\t\t Channel: {channels[self.channel]} ({hex(self.channel)})\n"
+        outstr += f"DBG::\t\t Sequence: {self.seq}\n"
 
-        if self.channel_number in {_BNO_CHANNEL_CONTROL, _BNO_CHANNEL_INPUT_SENSOR_REPORTS, }:
+        if self.channel in {_BNO_CHANNEL_CONTROL, _BNO_CHANNEL_INPUT_SENSOR_REPORTS, }:
             if self.report_id in _REPORTS_DICTIONARY:
                 outstr += f"DBG::\t\t Report Type: {_REPORTS_DICTIONARY[self.report_id]} ({hex(self.report_id)})\n"
             else:
                 outstr += f"DBG::\t\t \t** UNKNOWN Report Type **: {hex(self.report_id)}\n"
-            if self.report_id == 0xFC and len(self.data) >= 6 and self.data[1] in _REPORTS_DICTIONARY:
-                outstr += f"DBG::\t\t Enabled Feature: {_REPORTS_DICTIONARY[self.data[1]]} ({hex(self.data[1])})\n"
-        outstr += "\nDBG::\t\tData:"
+            if self.report_id == 0xFC and length - 4 >= 6 and self.report_id in _REPORTS_DICTIONARY:
+                # first report_id (self.data[0]), the report type to be enabled (self.data[1])
+                outstr += f"DBG::\t\t Feature to Enable: {_REPORTS_DICTIONARY[self.data[1]]} ({hex(self.data[1])})\n"
 
+        outstr += "\nDBG::\t\tData:\n"
+        outstr += f"DBG::\t\t Data Len: {length - 4}"
         for idx, packet_byte in enumerate(self.data[:length]):
             packet_index = idx + 4
             if (packet_index % 4) == 0:
@@ -469,94 +468,77 @@ class Packet:
         # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _COMMAND_ADVERTISE (0)
         # This will provide sensor information that is printed with debug=True
         # Still need to debug this
-        if self.header.data_length == 51 and self.channel_number == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _COMMAND_ADVERTISE:
-            outstr += "\nDBG::\t\t SHTP Advertisement Response (0x00) on channel: SHTP_COMMAND (0x0)\n"
-            length = len(self.data)
-            index = 1  # skip the first byte of the payload is the Response ID (0x00)
+        if self.byte_count - 4 == 51 and self.channel == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _COMMAND_ADVERTISE:
+            outstr += "\nDBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            outstr += "\nDBG::\t\t - no decoder for New Style SHTP Advertisement Response\n"
+        if self.byte_count - 4 == 34 and self.channel == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _COMMAND_ADVERTISE:
+            outstr += "\nDBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            p = 4
+            response_id = self.data[p]
+            normal_channel = self.data[p + 1]
+            wake_channel = self.data[p + 2]
+            max_cargo_write = self.data[p + 3] | (self.data[p + 4] << 8)
+            max_cargo_read = self.data[p + 5] | (self.data[p + 6] << 8)
+            max_transfer_write = self.data[p + 7] | (self.data[p + 8] << 8)
+            max_transfer_read = self.data[p + 9] | (self.data[p + 10] << 8)
+            outstr += f"DBG::\t\t Normal Channel: {normal_channel}\n"
+            outstr += f"DBG::\t\t Wake Channel: {wake_channel}\n"
+            outstr += f"DBG::\t\t Max Cargo Write: {max_cargo_write}\n"
+            outstr += f"DBG::\t\t Max Cargo Read:  {max_cargo_read}\n"
+            outstr += f"DBG::\t\t Max Transfer Write: {max_transfer_write}\n"
+            outstr += f"DBG::\t\t Max Transfer Read: {max_transfer_read}\n"
 
-            while index < length:
-                tag_index = index
-                tag = self.data[tag_index]
-                len_index = index + 1
-                tag_len = self.data[len_index]
-                value_index = index + 2
-                value = self.data[value_index:value_index + tag_len]
+            idx = p + 11  # strings, null terminated
+            end = self.byte_count
 
-                # Print absolute byte range and interpreted value
-                byte_range = f" *** {tag_index}-{value_index + tag_len - 1}"
+            def read_cstring(buf, start):
+                i = start
+                while i < end and buf[i] != 0:
+                    i += 1
+                s = buf[start:i].decode("ascii", "ignore")
+                return s, i + 1
 
-                if tag == 0:  # TAG_NULL (2 bytes total)
-                    outstr += f"DBG::\t\t {byte_range} TAG_NULL\n"
-                elif tag == 1:  # TAG_GUID (6 bytes total)
-                    guid = unpack_from("<I", value)[0]  # 4-byte little-endian
-                    outstr += f"DBG::\t\t {byte_range} TAG_GUID: {guid}\n"
-                elif tag == 2:  # TAG_MAX_CARGO_PLUS_HEADER_WRITE (4 bytes total)
-                    # Max Usable Cargo write Size = MaxCargoPlusHeaderWrite − 4 (SHTP Header Length)
-                    max_cargo_write = unpack_from("<H", value)[0] - 4  # take away header size, really?
-                    outstr += f"DBG::\t\t {byte_range} Max Cargo Write: {max_cargo_write}, without header\n"
-                elif tag == 3:  # TAG_MAX_CARGO_PLUS_HEADER_READ (4 bytes total)
-                    # Max Usable Cargo read Size = MaxCargoPlusHeaderRead − 4 (SHTP Header Length)
-                    max_cargo_read = unpack_from("<H", value)[0] - 4
-                    outstr += f"DBG::\t\t {byte_range} Max Cargo Read: {max_cargo_read}, without header\n"
-                elif tag == 4:  # TAG_MAX_TRANSFER_WRITE (4 bytes total)
-                    max_transfer_write = unpack_from("<H", value)[0]
-                    max_transfer_write = min(max_transfer_write, 1024)
-                    outstr += f"DBG::\t\t {byte_range} TAG_MAX_TRANSFER_WRITE: {max_transfer_write}\n"
-                elif tag == 5:  # TAG_MAX_TRANSFER_READ (4 bytes total)
-                    max_transfer_read = unpack_from("<H", value)[0]
-                    max_transfer_read = min(max_transfer_read, 1024)
-                    outstr += f"DBG::\t\t {byte_range} TAG_MAX_TRANSFER_READ: {max_transfer_read}\n"
-                elif tag == 6:  # TAG_NORMAL_CHANNEL (3 bytes total)
-                    chan_no = unpack_from("<B", value)[0]
-                    outstr += f"DBG::\t\t {byte_range} TAG_NORMAL_CHANNEL: {chan_no}\n"
-                elif tag == 7:  # TAG_WAKE_CHANNEL (3 bytes total)
-                    wake_chan = unpack_from("<B", value)[0]
-                    outstr += f"DBG::\t\t {byte_range} TAG_WAKE_CHANNEL: {wake_chan}\n"
-                elif tag == 8:  # TAG_APP_NAME (2 + N bytes total)
-                    app_name = value.decode('ascii')
-                    outstr += f"DBG::\t\t {byte_range} TAG_APP_NAME: {app_name}\n"
-                elif tag == 9:  # TAG_CHANNEL_NAME (2 + N bytes total)
-                    chan_name = value.decode('ascii')
-                    outstr += f"DBG::\t\t {byte_range} TAG_CHANNEL_NAME: {chan_name}\n"
-                elif tag == 10:  # TAG_ADV_COUNT (3 bytes total)
-                    adv_count = unpack_from("<B", value)[0]
-                    outstr += f"DBG::\t\t {byte_range} TAG_ADV_COUNT: {adv_count}\n"
-                elif tag == 0x80:  # TAG App Specific
-                    version = value.decode('ascii')
-                    outstr += f"DBG::\t\t {byte_range} Version: {version}\n"
-                else:
-                    outstr += f"Uknown tag = {tag}\n"
-
-                # Move to next TLV using absolute byte index
-                index = value_index + tag_len
-            outstr += "\n"
+            app_name, idx = read_cstring(self.data, idx)
+            chan_name, idx = read_cstring(self.data, idx)
+            ctl_name, idx = read_cstring(self.data, idx)
+            outstr += f"DBG::\t\t App: {app_name}\n"
+            outstr += f"DBG::\t\t Channel: {chan_name}\n"
+            outstr += f"DBG::\t\t Controller: {ctl_name}\n"
 
         return outstr
-
-    @property
-    def report_id(self) -> int:
-        """The Packet's Report ID"""
-        return self.data[0]
-
-    @property
-    def channel_number(self) -> int:
-        """The packet channel"""
-        return self.header.channel_number
 
     @property
     def byte_count(self) -> int:
         """The packet channel"""
         return self.header.packet_byte_count
 
+    @property
+    def channel(self) -> int:
+        """The packet channel"""
+        return self.header.channel_number
+
+    @property
+    def seq(self) -> int:
+        """The packet seq number"""
+        return self.header.sequence_number
+
+    @property
+    def report_id(self) -> int:
+        """The Packet's first Report ID"""
+        return self.header.report_id_number
+
     @classmethod
     def header_from_buffer(cls, packet_bytes: bytearray) -> PacketHeader:
-        """Creates a `PacketHeader` object from a given buffer"""
-        header_data = unpack_from("<HBB", packet_bytes, 0)
+        """
+        Creates a `PacketHeader` object from a given buffer, BNO datasheet 5.2.2
+        First 4 bytes are actual SHTP header, 5th byte is the first report_id
+        """
+        header_data = unpack_from("<HBBB", packet_bytes, 0)
         packet_byte_count = header_data[0] & ~0x8000
         channel_number = header_data[1]
         sequence_number = header_data[2]
-        data_length = max(0, packet_byte_count - 4)
-        header = PacketHeader(channel_number, sequence_number, data_length, packet_byte_count)
+        report_id_number = header_data[3]
+        header = PacketHeader(packet_byte_count, channel_number, sequence_number, report_id_number)
         return header
 
     @classmethod
@@ -802,6 +784,7 @@ class BNO08X:
         self.last_interrupt_us = -1  # used to signal first interrupt
         self.prev_interrupt_us = -1
         self.ms_at_interrupt = 0
+        self._data_available = False
         self._sensor_epoch_ms = 0.0
         self._last_base_timestamp_us = 0
 
@@ -849,12 +832,10 @@ class BNO08X:
         self.prev_interrupt_us = self.last_interrupt_us
         self.last_interrupt_us = ticks_us()
         self.ms_at_interrupt = ticks_ms()
-        # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
-        # self._dbg(f"INTERRUPT: at {self.last_interrupt_us=}, uart.any()={self._uart.any()}")
-
+        self._data_available = True
 
     def reset_sensor(self):
-        """ After power on, sensor seems to require a hard reset, soft reset may be useful after hard reset """
+        """ After power on, sensor seems to require hard reset, soft reset may be useful after hard reset """
         if self._reset_pin:
             self._hard_reset()
             reset_type = "Hard"
@@ -871,6 +852,8 @@ class BNO08X:
 
         if self._reset_mismatch:
             raise RuntimeError("Reset cause mismatch; check reset_pin wiring")
+
+        # sleep_ms(600)  # is this excessive?
 
         raise RuntimeError(f"Failed to get valid Product ID Response (0xf8) with {reset_type} reset")
 
@@ -943,6 +926,7 @@ class BNO08X:
         """ raw magnetic from registers 3 data value and a raw timestamp"""
         return RawSensorFeature(self, BNO_REPORT_RAW_MAGNETOMETER, data_count=4)
 
+    # Other Sensor Reports
     @property
     def steps(self):
         """ The number of steps detected since the sensor was initialized"""
@@ -1024,7 +1008,8 @@ class BNO08X:
                                   _ME_TARE_NOW,  # Perform Tare Now
                                   axis,
                                   basis,  # rotation vector (quaternion) to be tared
-                                  0, 0, 0, 0, 0, 0, ] # 6-11 Reserved
+                                  0, 0, 0, 0, 0, 0,  # 6-11 Reserved
+                              ]
                               )
         return axis, basis
 
@@ -1171,7 +1156,7 @@ class BNO08X:
 
             # Continue to read & ignore packets until we find selected response
             if packet is not None:
-                if (packet.header.channel_number == channel and
+                if (packet.channel == channel and
                         (report_id is None or report_id == packet.report_id)):
                     self._handle_packet(packet)
                     return packet
@@ -1247,7 +1232,9 @@ class BNO08X:
     def _handle_control_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
         Handle control reports. Handle time-critical Timestamp methods first
-        for each report ID type, process the report_bytes.
+        :param report_id: report ID
+        :param report_bytes: portion of packet for report
+        :return:
         """
         # Base Timestamp (0xfb)
         if report_id == _BASE_TIMESTAMP:
@@ -1411,13 +1398,13 @@ class BNO08X:
     # Enable given feature/sensor report on BNO08x (See SH2 6.5.4)
     def enable_feature(self, feature_id, freq=None):
         """
-        Enable sensor features for bno08x, set period in usec (not msec)
-        Called recursively since some raw reports require non-raw reports to be enabled
-        On Channel (0x02), send _SET_FEATURE_COMMAND (0xfb) with feature id
+        Enable sensor features for bno08x, set report period in usec (not msec)
+        Called recursively because raw reports require non-raw reports to be enabled
+        On Channel (0x02), send _SET_FEATURE_COMMAND (0xfb) with feature id and requested period
         On Channel (0x02), await GET_FEATURE_RESPONSE (0xfc) with actual eabled period
-        :returns frequency (float) actual frequency the sensor will attempt to respond
+        :returns frequency (float) actual frequency the sensor will attempt to use
         """
-        self._dbg(f"Enabling FEATURE ID: {hex(feature_id)}")
+        self._dbg(f"Send SET_FEATURE_COMMAND (0xfd) to enable FEATURE ID: {hex(feature_id)}")
         set_feature_report = bytearray(17)
         set_feature_report[0] = _SET_FEATURE_COMMAND
         set_feature_report[1] = feature_id
@@ -1458,7 +1445,7 @@ class BNO08X:
             self._dbg(f"Report enabled: {_REPORTS_DICTIONARY[fid]}: {hex(fid)}")
             self._dbg(f" Initial tuple={self._report_values}")
             self._dbg(f" Requested Interval: {requested_interval / 1000.0:.1f} ms")
-            self._dbg(f" Actual    Interval: {report_interval / 1000.0:.1f} ms")
+            self._dbg(f" Actual    Interval: {report_interval / 1000.0:.1f} ms\n")
             return 1_000_000. / report_interval
 
         except RuntimeError:
@@ -1497,27 +1484,21 @@ class BNO08X:
         while _elapsed_sec(start_time) < 3.0:
             try:
                 packet = self._read_packet(wait=True)
-                self._dbg(f"{packet.report_id=}")
                 if packet is None:
                     continue
-                if packet.channel_number != _BNO_CHANNEL_CONTROL:
+                if packet.channel != _BNO_CHANNEL_CONTROL:
                     self._dbg("_check_id skipping above packet\n")
                     continue
-                if len(packet.data) == 0:
+                if packet.byte_count - 4 == 0:
                     continue
                 if packet.report_id == _COMMAND_RESPONSE:
                     # Handle packet to process _REPORT_PRODUCT_ID_RESPONSE reports (0xf8)
                     self._handle_packet(packet)
                     break
-                if packet.report_id == _REPORT_PRODUCT_ID_RESPONSE:
-                    # if report is _REPORT_PRODUCT_ID_RESPONSE reports (0xf8)
-                    self._handle_packet(packet)
-                    return True
             except (RuntimeError, PacketError):
-                self._dbg("_check_id packet error in check_id scanning for reports")
                 continue
 
-        # check if sub-report is _REPORT_PRODUCT_ID_RESPONSE (0xf8) received
+        # check if _REPORT_PRODUCT_ID_RESPONSE (0xf8) received
         if getattr(self, "_product_id_received", False):
             return True
 
@@ -1552,9 +1533,9 @@ class BNO08X:
         self._dbg("*** Soft Reset End, awaiting acknowledgement (0xf8)")
 
     def _wake_signal(self):
-        """ Wake is only performaed for SPI operation, I2C and UART have pass defined for this"""
+        """ Wake is only performaed for spi operation  """
         if self._wake_pin is not None:
-            # self._dbg("WAKE pulse to BNO08x")
+            self._dbg("WAKE pulse to BNO08x")
             self._wake_pin.value(0)
             sleep_us(500)  # typ 150 usec required in datasheet BNO datasheet Fig 6-=11 Host Int timing SPI
             self._wake_pin.value(1)
