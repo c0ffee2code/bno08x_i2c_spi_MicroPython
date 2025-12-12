@@ -91,7 +91,7 @@ class BNO08X_I2C(BNO08X):
 
     def _wait_for_int(self):
         """
-        Waits for BNO08x int_pin to assert (go low) by monitoring microsecond timestamp set by the Interrupt.
+        Waits for int_pin to assert (go low) by monitoring microsecond timestamp set by the Interrupt.
         """
         initial_int_time = self.last_interrupt_us
         start_time = ticks_ms()
@@ -139,17 +139,22 @@ class BNO08X_I2C(BNO08X):
         header_mv = memoryview(self._data_buffer)[:4]
         self._i2c.readfrom_into(self._bno_i2c_addr, header_mv)
 
-        header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-        raw_packet_bytes = header_view.packet_bytes
-        channel = header_view.channel
-        seq = header_view.sequence
+#         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
+#         raw_packet_bytes = header_view.packet_bytes
+#         channel = header_view.channel
+#         seq = header_view.sequence
+# TODO remove uctypes
+        
+        raw = bytes(header_mv)  # forces materialization of bytearray
+        raw_packet_bytes = raw[0] | (raw[1] << 8)
+        channel = raw[2]
+        seq = raw[3]
+
         self._rx_sequence_number[channel] = seq  # SH2 Sequence number
 
-        # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
-        if raw_packet_bytes == 0:
-            self._dbg("_read_packet: packet_bytes=0, returning None.")
+        if raw_packet_bytes == 0:  # Fast return, if only SHTP header
             return None
-        if raw_packet_bytes == 0xFFFF:
+        if raw_packet_bytes == 0xFFFF:  # bad sensor 
             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
         
         packet_bytes = raw_packet_bytes & 0x7FFF
