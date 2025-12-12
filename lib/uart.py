@@ -84,7 +84,8 @@ class BNO08X_UART(BNO08X):
 
     def _wait_for_int(self):
         """
-        Waits for BNO08x int_pin to assert (go low) by monitoring microsecond timestamp set by the Interrupt.
+        Waits for the BNO08x int_pin to assert (go low) by monitoring 
+        the change in the microsecond timestamp set by the ISR.
         """
         initial_int_time = self.last_interrupt_us
         start_time = ticks_ms()
@@ -203,16 +204,16 @@ class BNO08X_UART(BNO08X):
         raw_packet_bytes = header_view.packet_bytes
         channel = header_view.channel
         seq = header_view.sequence
-        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
         
         # * comment out self._dbg for normal operation, adds delay even with debug=False
         # self._dbg(f" _read_packet Header {hex(raw_packet_bytes)}, {channel=}, {seq=}")
 
-        # Check for 0 length (to skip) or invalid lengths (bad sensor data, 0xFFFF)
-        if raw_packet_bytes == 0:
+        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+
+        if raw_packet_bytes == 0:  # skip 0 lenght
             self._dbg("_read_packet: packet_bytes=0, returning None.")
             return None
-        if raw_packet_bytes == 0xFFFF:
+        if raw_packet_bytes == 0xFFFF:  # bad sensor data 
             raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
@@ -271,9 +272,8 @@ class BNO08X_UART(BNO08X):
        """
         self._dbg("*** Soft Reset in UART , using Channel 1 command, starting...")
 
-        # Payload: 0x01 (the 'reset' command)
+        # Reset Command: Payload: 0x01 ('reset' command), sent on BNO_CHANNEL_EXE1 (1)
         reset_payload = bytearray([0x01])
-        # Send the packet on Channel 1 (BNO_CHANNEL_EXE = const(1) - 0x01)
         self._send_packet(0x01, reset_payload)
 
         # flush any uart data leftover from the previous run before the reset
@@ -318,8 +318,5 @@ class BNO08X_UART(BNO08X):
     @property
     def _data_ready(self):
         """UART variant also has uart.any() fallback"""
-        #         if self._data_available:
-        #             return True
-
         #self._dbg(f"_data_ready: {self._uart.any()}")
         return self._uart.any() >= 4

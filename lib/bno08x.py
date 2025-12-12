@@ -58,7 +58,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -452,7 +452,7 @@ class Packet:
                 outstr += f"DBG::\t\t \t** UNKNOWN Report Type **: {hex(self.report_id)}\n"
             if self.report_id == 0xFC and length - 4 >= 6 and self.report_id in _REPORTS_DICTIONARY:
                 # first report_id (self.data[0]), the report type to be enabled (self.data[1])
-                outstr += f"DBG::\t\t Feature to Enable: {_REPORTS_DICTIONARY[self.data[1]]} ({hex(self.data[1])})\n"
+                outstr += f"DBG::\t\t Feature Enabled: {_REPORTS_DICTIONARY[self.data[1]]} ({hex(self.data[1])})\n"
 
         outstr += "\nDBG::\t\tData:\n"
         outstr += f"DBG::\t\t Data Len: {length - 4}"
@@ -464,15 +464,23 @@ class Packet:
         outstr += "\n\t\t*******************************\n"
         # ascii = ''.join(chr(b) if 32 <= b <= 126 else f" x{b:02X}" for b in self.data[:length])
         # outstr += f"\nDBG::\t\t ascii: {ascii}\n"
+        
+        # preliminary decoding of packets
+        if self.byte_count - 4 == 15 and self.channel == _BNO_CHANNEL_INPUT_SENSOR_REPORTS and self.report_id == 0xfb:
+            outstr += f"DBG::\t\t first report: {_REPORTS_DICTIONARY[self.data[5]]} ({hex(self.data[5])})\n"
+
+        if self.byte_count - 4 == 1 and self.channel == BNO_CHANNEL_EXE and self.report_id == 0x01:
+            outstr += "DBG::\t\t Command Execution Response: SHTP_COMMAND (0x0)"
+            outstr += "\nDBG::\t\t - Reset Complete Acknowledged, 0xf8 reports to follow\n"
 
         # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _COMMAND_ADVERTISE (0)
         # This will provide sensor information that is printed with debug=True
         # Still need to debug this
         if self.byte_count - 4 == 51 and self.channel == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _COMMAND_ADVERTISE:
-            outstr += "\nDBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
-            outstr += "\nDBG::\t\t - no decoder for New Style SHTP Advertisement Response\n"
+            outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            outstr += "\nDBG::\t\t - todo: no decoder for New Style SHTP Advertisement Response\n"
         if self.byte_count - 4 == 34 and self.channel == BNO_CHANNEL_SHTP_COMMAND and self.report_id == _COMMAND_ADVERTISE:
-            outstr += "\nDBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             p = 4
             response_id = self.data[p]
             normal_channel = self.data[p + 1]
@@ -814,6 +822,7 @@ class BNO08X:
         self._dbg("********** End __init__ *************\n")
 
         # send channel 0 BNO_CHANNEL_SHTP_COMMAND, send _COMMAND_ADVERTISE (0) to get more sensor info with debug=True
+        self._dbg("*** Request _COMMAND_ADVERTISE")
         data = bytearray(2)
         data[0] = _COMMAND_ADVERTISE
         data[1] = 0
@@ -1126,6 +1135,17 @@ class BNO08X:
         """
         processed_count = 0
         end_time = ticks_ms() + 1  # 1 ms guard
+        
+#         if self._unread_reports_exist:
+#             processed_count += 1
+#             print(f"{self._unread_reports_exist=}")
+#             return
+#
+#         else:
+#             packet = self._read_packet(wait=True)
+#             self._handle_packet(packet)
+#             processed_count += 1
+#             
 
         while self._data_ready and processed_count < _MAX_PACKET_PROCESS:
             if ticks_diff(ticks_ms(), end_time) >= 0:
@@ -1311,23 +1331,26 @@ class BNO08X:
         # handle typical sensor reports first
         if 0x01 <= report_id <= 0x09:
             # uctypes-based sensor reports, Parses 3-tuple, 4-tuple, and 5-tuple
-            s = uctypes.struct(uctypes.addressof(report_bytes), _SENSOR_REPORT_LAYOUT, uctypes.LITTLE_ENDIAN)
             scalar, count, _ = _AVAIL_SENSOR_REPORTS[report_id]
+            
+            if count == 3:
+                v1, v2, v3 = unpack_from("<hhh", report_bytes, 4)
+                sensor_data = (v1*scalar, v2*scalar, v3*scalar)
+            elif count == 4:
+                v1, v2, v3, v4 = unpack_from("<hhhh", report_bytes, 4)
+                sensor_data = (v1*scalar, v2*scalar, v3*scalar, v4*scalar)
+            elif count == 5:  # Note likely different scalar when implement count=5
+                v1, v2, v3, v4, e1 = unpack_from("<hhhhh", report_bytes, 4)
+                sensor_data = (v1*scalar, v2*scalar, v3*scalar, v4*scalar, e1)
+                raise NotImplementedError(f"5-tuple Reports not supported yet,likely different scalar for e1.")
+            else:
+                raise ValueError("...",)
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
-            accuracy = s.byte2 & 0x03
-            delay_raw = ((s.byte2 >> 2) << 8) | s.byte3
+            byte2 = report_bytes[2]
+            accuracy = byte2 & 0x03
+            delay_raw = ((byte2 >> 2) << 8) | report_bytes[3]
             delay_ms = delay_raw * 0.1  # notice delay_ms is a float, we have 0.1ms accuracy
-
-            # scale sensor data by Q-point scalar, likely count=5's e1 needs a different Q-point scalar
-            if count == 3:
-                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar,)
-            elif count == 4:
-                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar, s.v4 * scalar,)
-            elif count == 5:  # likely s.e1 needs to be multiplied by diff Q-point scalar
-                sensor_data = (s.v1 * scalar, s.v2 * scalar, s.v3 * scalar, s.v4 * scalar, s.e1,)
-            else:
-                raise ValueError(f"Unexpected tuple length {count}")
 
             # remove self._dbg from time critical operations
             # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_ms=}")
@@ -1467,6 +1490,9 @@ class BNO08X:
         Send Product ID request then process packets until _COMMAND_RESPONSE (0xf1) received.
         Then handle packets, the first 0xf8 indicates reset success and last reset cause.
         Total of 4 0xf8 is normal (last 3 0xf8 will have reset causes = 0).
+        
+        Sometimes an 0xf8 will be set alone and not headed up with a _COMMAND_RESPONSE (0xf1),
+        that case is also acceptable
         """
         self._dbg("********** Check ID **********")
         if getattr(self, "_product_id_received", False):
@@ -1484,6 +1510,7 @@ class BNO08X:
         while _elapsed_sec(start_time) < 3.0:
             try:
                 packet = self._read_packet(wait=True)
+                reportid = packet.report_id
                 if packet is None:
                     continue
                 if packet.channel != _BNO_CHANNEL_CONTROL:
@@ -1495,6 +1522,10 @@ class BNO08X:
                     # Handle packet to process _REPORT_PRODUCT_ID_RESPONSE reports (0xf8)
                     self._handle_packet(packet)
                     break
+                if packet.report_id == _REPORT_PRODUCT_ID_RESPONSE:
+                    # if report is _REPORT_PRODUCT_ID_RESPONSE reports (0xf8)
+                    self._handle_packet(packet)
+                    return True
             except (RuntimeError, PacketError):
                 continue
 
@@ -1550,6 +1581,11 @@ class BNO08X:
     def _data_ready(self):
         """ Returns True if at least one new interrupt seen """
         return self.last_interrupt_us != self.prev_interrupt_us
+    
+    @property
+    def _unread_reports_exist(self):
+        """True only when processed sensor reports exist"""
+        return any(count > 0 for count in self._unread_report_count.values())
 
 
 # must define alias after BNO08X class, so class SensorReading4 class can use this
