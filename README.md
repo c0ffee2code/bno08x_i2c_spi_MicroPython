@@ -72,12 +72,12 @@ Primary sensor report constants:
 
 Sensors values can be read after you perform a bno.update_sensors:
 
-    bno.update_sensors
+    bno.update_sensors()
     accel_x, accel_y, accel_z = bno.acceleration
 
 Roll, tilt, and yaw are obtained using quaternion with the modifier euler:
 
-    bno.update_sensors
+    bno.update_sensors()
     roll, tilt, yaw = bno.quaternion.euler
 
 You can use one update_sensors to get the current update from all sensors and then the various sensors.
@@ -89,7 +89,7 @@ The timestamp_ms is milliseconds since sensor startup.
 You can calculate the millisecond difference between ticks_ms() and the bno08x start time by using bno.bno_start_diff.
 Understanding timestamps is recommended for high-frequency applications (>5Hz).
 
-    bno.update_sensors
+    bno.update_sensors()
     accel_x, accel_y, accel_z, accuracy, timestamp_ms = bno.acceleration.full
     roll, tilt, yaw, accuracy, timestamp_ms = bno.quaternion.euler_full   # note underscore in .euler_full
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
@@ -136,21 +136,21 @@ Typically, you want to tare on all axis and will specify this with 0x07.
     basis = 0 # quaternions
     axies = 0x07  # all axies
     bno.tare(axies,basis)
-    bno.save_tare_data
+    bno.save_tare_data()
 
 One can manually calibrate the sensor (details  in references):
 
-    bno.begin_calibration 
-    bno.calibration_status  # wait for sensor to be ready to calibrate
+    bno.begin_calibration() 
+    bno.calibration_status()  # wait for sensor to be ready to calibrate
     # loop to test acceleration, magnetic, gyro  - see examples/test_calibration.py
-    bno.save_calibration_data
+    bno.save_calibration_data()
 
 tare_reorientation can be used to set the sensor board orientation, for example if are mounting board vertically, or if you want a different part of the sensor to be "forward".
 
     i, j, k, real = bno.quaternion   # rotation 4-tuple of i,j,k,real float returned
     # perform calcuations to transform tuple for your direction to tare on, then set, and save (see references below)
     bno.tare_reorientation(i, j, k, real)
-    bno.save_tare_data
+    bno.save_tare_data()
 
 We also supply the following conversion helper function:
 

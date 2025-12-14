@@ -41,7 +41,7 @@ bno.calibration_status
 print(f"\nCalibration: Continue for {good_before_save} secs of \"Medium Accuracy\" to \"High Accuracy\"")
 while True:
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     _, _, _, accel_accuracy, _ = bno.acceleration.full
     _, _, _, mag_accuracy, _ = bno.magnetic.full

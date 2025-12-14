@@ -39,7 +39,7 @@ bno.print_report_period()
 print("\nStart loop:")
 while True:
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     print(f"\nsystem {ticks_ms()=}")
 

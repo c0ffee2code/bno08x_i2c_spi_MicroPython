@@ -17,7 +17,7 @@ reset_pin = Pin(15, Pin.OUT, value=1)  # Reset to signal BNO to reset
 
 # miso=Pin(16) - BNO SO (POCI)
 cs_pin = Pin(17, Pin.OUT, value=1)
-# sck=Pin(18)  - BNO sck 
+# sck=Pin(18)  - BNO SCK 
 # mosi=Pin(19) - BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
@@ -29,13 +29,13 @@ print(spi)
 print("Start")
 print("====================================\n")
 
-bno.acceleration.enable(20)
+bno.acceleration.enable(1000)
 
 bno.print_report_period()
 
 while True:
     # Required to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     accel_x, accel_y, accel_z = bno.acceleration
     print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f} m/s²")

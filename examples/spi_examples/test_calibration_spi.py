@@ -15,7 +15,7 @@ reset_pin = Pin(15, Pin.OUT, value=1)  # Reset to signal BNO to reset
 
 # miso=Pin(16) - BNO SO (POCI)
 cs_pin = Pin(17, Pin.OUT, value=1)
-# sck=Pin(18)  - BNO sck 
+# sck=Pin(18)  - BNO SCK 
 # mosi=Pin(19) - BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
@@ -39,15 +39,15 @@ calibration_good = False
 status = ""
 
 # Begin calibration
-bno.begin_calibration
+bno.begin_calibration()
 
 # Wait sensor to be ready to calibrate
-bno.calibration_status
+bno.calibration_status()
 
 print(f"\nCalibration: Continue for {good_before_save} secs of \"Medium Accuracy\" to \"High Accuracy\"")
 while True:
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     _, _, _, accel_accuracy, _ = bno.acceleration.full
     _, _, _, mag_accuracy, _ = bno.magnetic.full

@@ -66,7 +66,7 @@ print(f"\n\n*** Tare the sensor axis=({hex(axis)}), basis={basis})\n")
 
 # show new orientation based on tare for 9 seconds
 for t in range(1, 9):
-    bno.update_sensors
+    bno.update_sensors()
 
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
     print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
@@ -76,5 +76,5 @@ for t in range(1, 9):
     sleep(1)
 
 # Exited loop
-bno.save_tare_data
+bno.save_tare_data()
 print("\n\t*** Tare saved")

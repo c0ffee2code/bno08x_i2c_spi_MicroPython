@@ -30,7 +30,7 @@ bno.print_report_period()
 
 while True:
     # Required to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     accel_x, accel_y, accel_z = bno.acceleration
     print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f} m/s²")

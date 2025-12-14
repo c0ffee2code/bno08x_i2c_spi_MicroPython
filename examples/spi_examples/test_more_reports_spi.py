@@ -14,7 +14,7 @@ reset_pin = Pin(15, Pin.OUT, value=1)  # Reset to signal BNO to reset
 
 # miso=Pin(16) - BNO SO (POCI)
 cs_pin = Pin(17, Pin.OUT, value=1)
-# sck=Pin(18)  - BNO sck 
+# sck=Pin(18)  - BNO SCK 
 # mosi=Pin(19) - BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
@@ -36,7 +36,7 @@ last_print = ticks_ms()
 print("\nStart loop:")
 while True:    
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     # print out results every 0.5 sec (500 ms)
     now = ticks_ms()

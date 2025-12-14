@@ -29,7 +29,7 @@ last_print = ticks_ms()
 print("\nStart loop:")
 while True:    
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
 
     # print out results every 0.5 sec (500 ms)
     now = ticks_ms()

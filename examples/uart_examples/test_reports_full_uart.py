@@ -37,7 +37,7 @@ bno.print_report_period()
 print("\nStart loop:")
 while True:
     # Required each loop to refresh sensor data
-    bno.update_sensors
+    bno.update_sensors()
     
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
     print(f"\nsystem {ticks_ms()=},",
