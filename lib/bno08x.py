@@ -807,11 +807,12 @@ class BNO08X:
         self._in_handle = False
         self._product_id_received = False
         self._reset_mismatch = False  # if reset_pin set make sure hardware reset done, else pin bad
-        # dictionary of most recent sensor values, only ifenabled
-        self._report_values = {}
-        # dictionary of reports received but not yet read by user
-        self._unread_report_count = {}
+
         self._report_periods_dictionary_us = {}
+              
+        self._features = {}  # Create feature objects once
+        self._report_values = {} # most recent sensor values, only if enabled
+        self._unread_report_count = {} # reports received but not yet read by user
 
         self.reset_sensor()
 
@@ -868,78 +869,113 @@ class BNO08X:
 
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
 
-    @property
     def update_sensors(self):
         num_packets = self._process_available_packets()
         if num_packets > 1:
             print(f"***update_sensors: #packet={num_packets}")
         return num_packets
 
+
     # 3-Tuple Sensor Reports + accuracy + timestamp
     @property
     def linear_acceleration(self):
         """Current linear acceleration values on the X, Y, and Z axes in meters per second squared"""
-        return SensorFeature3(self, BNO_REPORT_LINEAR_ACCELERATION)
-
+        report_id = BNO_REPORT_LINEAR_ACCELERATION
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature3(self, report_id)
+        return self._features[report_id]
+    
     @property
     def acceleration(self):
-        """Returns the SensorFeature3 manager object for acceleration."""
-        return SensorFeature3(self, BNO_REPORT_ACCELEROMETER)
+        report_id = BNO_REPORT_ACCELEROMETER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature3(self, report_id)
+        return self._features[report_id]
 
     @property
     def gravity(self):
         """gravity vector in the X, Y, and Z components axes in meters per second squared"""
-        return SensorFeature3(self, BNO_REPORT_GRAVITY)
+        report_id = BNO_REPORT_GRAVITY
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature3(self, report_id)
+        return self._features[report_id]
 
     @property
     def gyro(self):
         """Gyro's rotation measurements on the X, Y, and Z axes in radians per second"""
-        return SensorFeature3(self, BNO_REPORT_GYROSCOPE)
+        report_id = BNO_REPORT_GYROSCOPE
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature3(self, report_id)
+        return self._features[report_id]
 
     @property
     def magnetic(self):
         """current magnetic field measurements on the X, Y, and Z axes"""
-        return SensorFeature3(self, BNO_REPORT_MAGNETOMETER)
+        report_id = BNO_REPORT_MAGNETOMETER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature3(self, report_id)
+        return self._features[report_id]
 
     # 4-Tuple Sensor Reports + accuracy + timestamp
     @property
     def quaternion(self):
         """A quaternion representing the current rotation vector"""
-        return SensorFeature4(self, BNO_REPORT_ROTATION_VECTOR)
+        report_id = BNO_REPORT_ROTATION_VECTOR
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature4(self, report_id)
+        return self._features[report_id]
 
     @property
     def geomagnetic_quaternion(self):
         """A quaternion representing the current geomagnetic rotation vector"""
-        return SensorFeature4(self, BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR)
+        report_id = BNO_REPORT_GEOMAGNETIC_ROTATION_VECTOR
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature4(self, report_id)
+        return self._features[report_id]
 
     @property
     def game_quaternion(self):
         """A quaternion representing the current rotation vector with no specific reference for heading,
         while roll and pitch are referenced against gravity. To prevent sudden jumps in heading due to corrections,
         the `game_quaternion` property is not corrected using the magnetometer. Drift is expected ! """
-        return SensorFeature4(self, BNO_REPORT_GAME_ROTATION_VECTOR)
+        report_id = BNO_REPORT_GAME_ROTATION_VECTOR
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature4(self, report_id)
+        return self._features[report_id]
 
     # raw reports to not support .full
     @property
     def raw_acceleration(self):
         """raw acceleration from registers 3 data value and a raw timestamp"""
-        return RawSensorFeature(self, BNO_REPORT_RAW_ACCELEROMETER, data_count=4)
+        report_id = BNO_REPORT_RAW_ACCELEROMETER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = RawSensorFeature(self, report_id, data_count=4)
+        return self._features[report_id]
 
     @property
     def raw_gyro(self):
         """ raw gyroscope from registers 3 data value, only sensor that reports Celsius, and a raw timestamp"""
-        return RawSensorFeature(self, BNO_REPORT_RAW_GYROSCOPE, data_count=5)
+        report_id = BNO_REPORT_RAW_GYROSCOPE
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = RawSensorFeature(self, report_id, data_count=5)
+        return self._features[report_id]
 
     @property
     def raw_magnetic(self):
         """ raw magnetic from registers 3 data value and a raw timestamp"""
-        return RawSensorFeature(self, BNO_REPORT_RAW_MAGNETOMETER, data_count=4)
+        report_id = BNO_REPORT_RAW_MAGNETOMETER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = RawSensorFeature(self, report_id, data_count=4)
+        return self._features[report_id]
 
     # Other Sensor Reports
     @property
     def steps(self):
         """ The number of steps detected since the sensor was initialized"""
-        return SensorFeature1(self, BNO_REPORT_STEP_COUNTER)
+        report_id = BNO_REPORT_STEP_COUNTER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature1(self, report_id)
+        return self._features[report_id]
 
     @property
     def stability_classifier(self):
@@ -950,7 +986,10 @@ class BNO08X:
         * "Stable" - met the stable threshold and duration requirements.
         * "In motion" - sensor is moving.
         """
-        return SensorFeature1(self, BNO_REPORT_STABILITY_CLASSIFIER)
+        report_id = BNO_REPORT_STABILITY_CLASSIFIER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature1(self, report_id)
+        return self._features[report_id]
 
     @property
     def activity_classifier(self):
@@ -958,7 +997,10 @@ class BNO08X:
         * "Unknown", "In-Vehicle", "On-Bicycle", "On-Foot", "Still"
         * "Tilting", "Walking"     "Running",    "On Stairs"
         """
-        return SensorFeature2(self, BNO_REPORT_ACTIVITY_CLASSIFIER)
+        report_id = BNO_REPORT_ACTIVITY_CLASSIFIER
+        if report_id not in self._features:  # If object not found, create and cache it
+            self._features[report_id] = SensorFeature2(self, report_id)
+        return self._features[report_id]
 
     # =============  User helper functions  =============
     def bno_start_diff(self, ticks: int) -> int:
@@ -1022,7 +1064,6 @@ class BNO08X:
                               )
         return axis, basis
 
-    @property
     def clear_tare(self):
         """ Clear the Tare data to flash. """
         self._dbg(f"TARE: Clear Tare...")
@@ -1051,7 +1092,6 @@ class BNO08X:
         self._send_me_command(_ME_TARE_COMMAND, params)
         return
 
-    @property
     def save_tare_data(self):
         """Save the Tare data to flash"""
         self._dbg(f"TARE Persist data to flash...")
@@ -1062,7 +1102,6 @@ class BNO08X:
                               )
         return
 
-    @property
     def begin_calibration(self) -> int:
         """
         Request manual calibration.  6.4.6.1 SH-2: Command Request to configure the ME calibration for
@@ -1259,13 +1298,17 @@ class BNO08X:
         # Base Timestamp (0xfb)
         if report_id == _BASE_TIMESTAMP:
             self._last_base_timestamp_us = unpack_from("<I", report_bytes, 1)[0] * 100
-            self._dbg(f"Base Timestamp (0xfb): {self._last_base_timestamp_us} usec")
+            
+            # remove self._dbg from time critical operations
+            # self._dbg(f"Base Timestamp (0xfb): {self._last_base_timestamp_us} usec")
             return
 
         # Timestamp Rebase (0xfa), see this when _BASE_TIMESTAMP wraps so use this instead
         if report_id == _TIMESTAMP_REBASE:
             self._last_base_timestamp_us = unpack_from("<I", report_bytes, 1)[0] * 100
-            self._dbg(f"Timestamp Rebase (0xfa): {self._last_base_timestamp_us} usec")
+            
+            # remove self._dbg from time critical operations
+            # self._dbg(f"Timestamp Rebase (0xfa): {self._last_base_timestamp_us} usec")
             return
 
         # Feature response (0xfc) - This report issued when feature is enabled
