@@ -11,13 +11,9 @@
 # Enabling reports at default frequencies
 # Raw sensors will automatically enable additional required reports
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA
@@ -41,7 +37,7 @@ bno.print_report_period()
 while True:
     # Required each loop to refresh sensor data
     bno.update_sensors()
-        
+
     accel_x, accel_y, accel_z, ts_us = bno.raw_acceleration
     print(f"\nRaw Acceleration:  X: {accel_x:#06x}  Y: {accel_y:#06x}  Z: {accel_z:#06x} {ts_us=}")
 

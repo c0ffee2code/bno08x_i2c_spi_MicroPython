@@ -4,13 +4,10 @@
 # Calibration of three main sensors.
 # see README.md "Basic User Sensor Calibration Procedure" for recommened sensor movementsn
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
+from utime import ticks_ms
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA

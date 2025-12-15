@@ -43,7 +43,7 @@ while secs > 0:
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
 
-    start_time = ticks_ms()
+    start = ticks_ms()
     secs -= 1
 
 # Tare the orientation

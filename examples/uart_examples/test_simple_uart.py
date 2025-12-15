@@ -4,13 +4,9 @@
 #
 # UART interface: Test simple sensor report for acceleration
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA

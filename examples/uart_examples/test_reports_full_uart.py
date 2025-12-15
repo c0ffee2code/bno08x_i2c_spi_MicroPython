@@ -7,13 +7,10 @@
 # full reports with accuracy and timestamps
 # notice: with slow report frequency, the report can be from last time at not at this time
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
+from utime import ticks_ms
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA
@@ -38,12 +35,12 @@ print("\nStart loop:")
 while True:
     # Required each loop to refresh sensor data
     bno.update_sensors()
-    
+
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
     print(f"\nsystem {ticks_ms()=},",
-        f"time from BNO start: {ms_since_sensor_start/1000.0:.3f} s",
-        f"({ms_since_sensor_start:.0f} ms)")
-    
+          f"time from BNO start: {ms_since_sensor_start / 1000.0:.3f} s",
+          f"({ms_since_sensor_start:.0f} ms)")
+
     accel_x, accel_y, accel_z, acc, ts_ms = bno.acceleration.full
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
     print(f"Acceleration: accuracy={acc}, {ts_ms=:.1f}")

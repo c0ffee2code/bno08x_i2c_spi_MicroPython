@@ -4,13 +4,10 @@
 #
 # Steps counted,  Stability classifier, Activity classifier
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
+from utime import ticks_ms
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA
@@ -33,7 +30,7 @@ bno.print_report_period()
 
 last_print = ticks_ms()
 print("\nStart loop:")
-while True:    
+while True:
     # Required each loop to refresh sensor data
     bno.update_sensors()
 
