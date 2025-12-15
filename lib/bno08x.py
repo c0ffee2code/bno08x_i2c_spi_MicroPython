@@ -1252,14 +1252,13 @@ class BNO08X:
                         required_bytes = _AVAIL_SENSOR_REPORTS[report_id][2]
                     except:
                         self._dbg(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
-                        self._dbg(f"INVALID REPORT ID {next_byte_index=}, next 6 bytes follows:")
-                        debug_view = packet.data[next_byte_index: next_byte_index + 6]
-                        self._dbg(f"{debug_view=}")
+                        self._dbg(f"Invalid Report Id {next_byte_index=}, next 6 bytes follows:")
+                        self._dbg(f"_handle_packet: {[hex(x) for x in packet.data[next_byte_index: next_byte_index + 8]]}")
 
                         # todo remove after debut, don't like skipping
                         print(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
-                        print(f"INVALID REPORT ID {next_byte_index=}, next 6 bytes follows:")
-                        print(f"{debug_view=}")
+                        print(f"INVALID REPORT ID {next_byte_index=}, up to 8 bytes follow:")
+                        print(f"_handle_packet: {[hex(x) for x in packet.data[next_byte_index: next_byte_index + 8]]}")
                         raise NotImplementedError(f"Un-implemented Report ({hex(report_id)=}) not supported yet.")
                 else:
                     required_bytes = _REPORT_LENGTHS.get(report_id, 0)
@@ -1534,7 +1533,7 @@ class BNO08X:
         Then handle packets, the first 0xf8 indicates reset success and last reset cause.
         Total of 4 0xf8 is normal (last 3 0xf8 will have reset causes = 0).
         
-        Sometimes an 0xf8 will be set alone and not headed up with a _COMMAND_RESPONSE (0xf1),
+        Sometimes a 0xf8 will be set alone and not headed up with a _COMMAND_RESPONSE (0xf1),
         that case is also acceptable
         """
         self._dbg("********** Check ID **********")

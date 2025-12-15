@@ -28,53 +28,50 @@ print("Start")
 print("===========================")
 
 bno.quaternion.enable(100)
-
 bno.print_report_period()
 
-good_before_save = 5
-start_good = None
-calibration_good = False
-status = ""
-
-# show orientation for 9 seconds
-for t in range(1, 9):
-    bno.update_sensors
-
-    quat_i, quat_j, quat_k, quat_real = bno.quaternion
-    print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
+print("\n\n*** Starting Countdown timer for 10 seconds, then tare the sensor\n")
+start_time = ticks_ms()
+secs = 10
+while secs > 0:
+    bno.update_sensors()
     
+    if ticks_ms() - start_time <= 1000:
+        continue
+    
+    quat_i, quat_j, quat_k, quat_real = bno.quaternion
+    print(f"\nt={secs}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
-    sleep(1)
-
-print("\n\n*** Starting Countdown timer for 5 seconds, then tare the sensor\n")
-for t in range(5, 0, -1):
-    bno.update_sensors
-
-    quat_i, quat_j, quat_k, quat_real = bno.quaternion
-    print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
     
-    roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
-    print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
-    sleep(1)
+    start_time = ticks_ms()
+    secs -= 1
 
+# Tare the orientation
 axis = 0x07  # tare all Axis (z, y, x)
 basis = 0  # Quaternion
 bno.tare(axis, basis)
 
-print(f"\n\n*** Tare the sensor axis=({hex(axis)}), basis={basis})\n")
+print(f"\n\n*** Tared the sensor axis=({hex(axis)}), basis={basis})\n")
 
-# show new orientation based on tare for 9 seconds
-for t in range(1, 9):
+# show the new orientation based on tare for 7 seconds
+start_time = ticks_ms()
+secs = 7
+while secs > 0:
     bno.update_sensors()
-
-    quat_i, quat_j, quat_k, quat_real = bno.quaternion
-    print(f"\nt={t}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
     
+    if ticks_ms() - start_time <= 1000:
+        continue
+    
+    quat_i, quat_j, quat_k, quat_real = bno.quaternion
+    print(f"\nt={secs}: Quaternion:  I: {quat_i:+.3f}  J: {quat_j:+.3f}  K: {quat_k:+.3f}  Real: {quat_real:+.3f}")
     roll, pitch, yaw = bno.euler_conversion(quat_i, quat_j, quat_k, quat_real)
     print(f"     Euler Angle: Roll {roll:+.1f}°  Pitch: {pitch:+.1f}°  Yaw: {yaw:+.1f}°  degrees")
-    sleep(1)
+    
+    start_time = ticks_ms()
+    secs -= 1
+
 
 # Exited loop
 bno.save_tare_data()
-print("\n\t*** Tare saved")
+print("\n\t*** Tare saved (from 7 seconds ago)")
