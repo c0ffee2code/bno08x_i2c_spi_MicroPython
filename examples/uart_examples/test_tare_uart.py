@@ -4,13 +4,10 @@
 #
 # measure quaternion, use euler_conversion, tare the sensor, and show new orientation
 
-from time import sleep
-
-from uart import BNO08X_UART
 from bno08x import *
-
 from machine import UART, Pin
-from utime import ticks_ms, sleep_us
+from uart import BNO08X_UART
+from utime import ticks_ms, ticks_diff
 
 # UART1-tx=Pin(8) - BNO SCI
 # UART1-rx=Pin(9) - BNO SDA
@@ -33,7 +30,7 @@ secs = 10
 while secs > 0:
     bno.update_sensors()
 
-    if ticks_ms() - start_time <= 1000:
+    if ticks_diff(ticks_ms(), start) < 1000:
         continue
 
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
@@ -57,7 +54,7 @@ secs = 7
 while secs > 0:
     bno.update_sensors()
 
-    if ticks_ms() - start_time <= 1000:
+    if ticks_diff(ticks_ms(), start) < 1000:
         continue
 
     quat_i, quat_j, quat_k, quat_real = bno.quaternion
