@@ -154,8 +154,8 @@ class BNO08X_I2C(BNO08X):
 
         if raw_packet_bytes == 0:  # Fast return, if only SHTP header
             return None
-        if raw_packet_bytes == 0xFFFF:  # bad sensor 
-            raise PacketError(f"Invalid SHTP header length detected: {hex(raw_packet_bytes)}")
+        if raw_packet_bytes == 0xFFFF:  # bad sensor         
+            raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), sensor corrupted?")
         
         packet_bytes = raw_packet_bytes & 0x7FFF
 
