@@ -380,13 +380,7 @@ _ENABLED_ACTIVITIES = 0x1FF  # Enable 9  activities: 1 bit set for each of 8 act
 DATA_BUFFER_SIZE = const(512)  # data buffer size. obviously eats ram
 PacketHeader = namedtuple(
     "PacketHeader",
-    [
-        "packet_byte_count",
-        "channel_number",
-        "sequence_number",
-        "report_id_number",
-
-    ],
+    ["packet_byte_count", "channel_number", "sequence_number", "report_id_number",],
 )
 
 REPORT_ACCURACY_STATUS = [
@@ -474,11 +468,13 @@ class Packet:
             outstr += "DBG::\t\t Command Execution Response: SHTP_COMMAND (0x0)"
             outstr += "\nDBG::\t\t - Reset Complete Acknowledged, 0xf8 reports to follow\n"
 
-        # On channel 0 BNO_CHANNEL_SHTP_COMMAND, send _COMMAND_ADVERTISE (0)
+        # Advertisement Response provides sensor information that is printed with debug=True
+        # I2C & UART use New Style Advertisement
         if self.byte_count - 4 == 51 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             length = len(self.packet_sh2)
             index = 5
+
             # Tag Processors: {tag_id: (name, format, subtract_header_4, clamp_max_1024)}
             tag_dictionary = {0: ("TAG_NULL", 'S', 0, 0), 1: ("TAG_GUID", '<I', 0, 0), 2: ("Max Cargo Write", '<H', 1, 0),
                  3: ("Max Cargo Read", '<H', 1, 0), 4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1),
@@ -511,7 +507,9 @@ class Packet:
                     outstr += f"DBG::\t\t {name}: {v}{s}\n"
 
             return outstr
-
+        
+        # Advertisement Response provides sensor information that is printed with debug=True
+        # SPI uses New Style Advertisement
         if self.byte_count - 4 == 34 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             p = 4 + 4
@@ -845,11 +843,9 @@ class BNO08X:
 
         self.reset_sensor()
 
-        # if no int_pin when significant commmunication has already occured, raise error
+        # if no int_pin at this point, raise error because we know lot commmunication has occured
         if self.ms_at_interrupt == 0:
             raise RuntimeError("No int_pin signals, check int_pin wiring")
-
-        self._dbg("********** End __init__ *************\n")
 
         # send channel 0 BNO_CHANNEL_SHTP_COMMAND, send _COMMAND_ADVERTISE (0) to get more sensor info with debug=True
         self._dbg("*** Request _COMMAND_ADVERTISE")
@@ -858,6 +854,21 @@ class BNO08X:
         data[1] = 0
         self._wake_signal()
         self._send_packet(SHTP_CHAN_COMMAND, data)
+        # wait for response, ignore packets until _GET_FEATURE_RESPONSE (0xfc)
+        try:
+            packet_response = self._wait_for_packet(
+                SHTP_CHAN_COMMAND, 
+                _COMMAND_ADVERTISE,
+                timeout=_FEATURE_ENABLE_TIMEOUT,
+                handle_packet=False
+            )
+            self._dbg(f" Received Packet *************{packet_response}")
+
+        except RuntimeError:
+            raise RuntimeError(f"BNO08X init: not able to get Command Advertise: {hex(_COMMAND_ADVERTISE)}")
+
+        self._dbg("********** End __init__ *************\n")
+
 
     def _on_interrupt(self, pin):
         """
@@ -1232,7 +1243,30 @@ class BNO08X:
             # self._dbg(f"{new_packet=}")
         return processed_count
 
-    def _wait_for_packet(self, channel, report_id=None, timeout=0.5):
+#     def _wait_for_packet(self, channel, report_id=None, timeout=0.5):
+#         """ Wait for a specifc packet to be received on channel, ignore others """
+#         start_time = ticks_ms()
+#         while _elapsed_sec(start_time) < timeout:
+#             try:
+#                 packet = self._read_packet(wait=False)
+#             except PacketError:
+#                 sleep_ms(1)
+#                 continue
+# 
+#             # Continue to read & ignore packets until we find selected response
+#             if packet is not None:
+#                 if (packet.channel == channel and
+#                         (report_id is None or report_id == packet.report_id)):
+#                     self._handle_packet(packet)
+#                     return packet
+# 
+#             sleep_ms(1)
+# 
+#         raise RuntimeError(
+#             f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s"
+#         )
+
+    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True): 
         """ Wait for a specifc packet to be received on channel, ignore others """
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < timeout:
@@ -1242,11 +1276,13 @@ class BNO08X:
                 sleep_ms(1)
                 continue
 
-            # Continue to read & ignore packets until we find selected response
             if packet is not None:
                 if (packet.channel == channel and
-                        (report_id is None or report_id == packet.report_id)):
-                    self._handle_packet(packet)
+                    (report_id is None or report_id == packet.report_id)):
+                    
+                    if handle_packet:  # <--- NEW CHECK
+                        self._handle_packet(packet)
+                    
                     return packet
 
             sleep_ms(1)
@@ -1532,9 +1568,9 @@ class BNO08X:
         try:
             report_bytes = self._wait_for_packet(SHTP_CHAN_CONTROL, _GET_FEATURE_RESPONSE,
                                                  timeout=_FEATURE_ENABLE_TIMEOUT)
-            data = report_bytes.packet_sh2
-            fid = data[5]
-            report_interval = unpack_from("<I", data, 5)[0]
+            packet_response = report_bytes.packet_sh2
+            fid = packet_response[5]
+            report_interval = unpack_from("<I", packet_response, 9)[0]
             self._report_values[feature_id] = _INITIAL_REPORTS.get(feature_id, (0.0, 0.0, 0.0, 0, 0))
             self._report_periods_dictionary_us[feature_id] = report_interval
             self._dbg(f"Report enabled: {_REPORTS_DICTIONARY[fid]}: {hex(fid)}")
