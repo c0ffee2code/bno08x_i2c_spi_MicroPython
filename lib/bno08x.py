@@ -260,6 +260,7 @@ DEFAULT_REPORT_FREQ = {
     BNO_REPORT_GYRO_INTEGRATED_ROTATION_VECTOR: 10,
 }
 
+# pre-calculates the reciprocals
 _Q_POINT_14_SCALAR = 2 ** (14 * -1)
 _Q_POINT_12_SCALAR = 2 ** (12 * -1)
 _Q_POINT_9_SCALAR = 2 ** (9 * -1)
@@ -951,10 +952,7 @@ class BNO08X:
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
 
     def update_sensors(self):
-        num_packets = self._parse_packets()
-        if num_packets > 1:
-            print(f"***update_sensors: #packet={num_packets}")
-        return num_packets
+        return self._parse_packets()
 
     # 3-Tuple Sensor Reports + accuracy + timestamp
     @property
@@ -1245,11 +1243,7 @@ class BNO08X:
     #     ############### private/helper methods ###############
 
     def _parse_packets(self) -> int:
-        """
-        Fast processing of packets while data-ready is active.
-        
-        TODO: Haven't seen packets processed_count > 1, revisit the logic
-        """
+        """ Parse packets and handle reports while data-ready is active."""
         processed_count = 0
         max_packets = _MAX_PACKET_PROCESS
         end_time = ticks_ms() + 10  #10ms guard time
@@ -1294,33 +1288,11 @@ class BNO08X:
 
         return processed_count
 
-    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True):
-        """ Wait for a specifc packet to be received on channel, ignore others """
-        start_time = ticks_ms()
-        while _elapsed_sec(start_time) < timeout:
-            try:
-                packet = self._read_packet(wait=False)
-            except PacketError:
-                sleep_ms(1)
-                continue
-
-            if packet is not None:
-                if packet.channel == channel and (report_id is None or report_id == packet.report_id):
-                    if handle_packet:
-                        self._handle_packet(packet)
-
-                    return packet
-
-            sleep_ms(1)
-
-        raise RuntimeError(
-            f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s"
-        )
 
     def _handle_packet(self, packet):
         """
-        Split a single packet into multiple reports and process them in FIFO order.
-        Handles multiple 0xF8 Product ID Response reports correctly.
+        Splits a packet into multiple reports and process them in FIFO order.
+        NOTE: **** this code is also inlined in _parse_packets for efficiency ****
         """
         data_length = len(packet.packet_sh2)
         next_byte_index = 4  # offset to skip over SHTP header
@@ -1347,6 +1319,29 @@ class BNO08X:
 
         # * commented out self._dbg in time critical loops
         # self._dbg(f"HANDLING {report_count} PACKET{'S' if report_count > 1 else ''}...")
+        
+    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True):
+        """ Wait for a specifc packet to be received on channel, ignore others """
+        start_time = ticks_ms()
+        while _elapsed_sec(start_time) < timeout:
+            try:
+                packet = self._read_packet(wait=False)
+            except PacketError:
+                sleep_ms(1)
+                continue
+
+            if packet is not None:
+                if packet.channel == channel and (report_id is None or report_id == packet.report_id):
+                    if handle_packet:
+                        self._handle_packet(packet)
+
+                    return packet
+
+            sleep_ms(1)
+
+        raise RuntimeError(
+            f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s"
+        )
 
 
     def _handle_control_report(self, report_id: int, report_bytes: bytearray) -> None:
