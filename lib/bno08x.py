@@ -113,9 +113,6 @@ _COMMAND_STATUS_SUCCESS = 0
 _ME_TARE_COMMAND = const(0x03)
 _SAVE_DCD_COMMAND = const(0x06)
 _ME_CALIBRATE_COMMAND = const(0x07)
-# possible to implement
-_CALIBRATION_COMMAND = const(0x0c)
-_INTERACTIVE_CALIBRATION_COMMAND = const(0x0e)
 
 # ME/DCD Subcommads
 _ME_CAL_CONFIG = const(0x00)
@@ -380,7 +377,7 @@ _ENABLED_ACTIVITIES = 0x1FF  # Enable 9  activities: 1 bit set for each of 8 act
 DATA_BUFFER_SIZE = const(512)  # data buffer size. obviously eats ram
 PacketHeader = namedtuple(
     "PacketHeader",
-    ["packet_byte_count", "channel_number", "sequence_number", "report_id_number",],
+    ["packet_byte_count", "channel_number", "sequence_number", "report_id_number", ],
 )
 
 REPORT_ACCURACY_STATUS = [
@@ -429,7 +426,7 @@ class Packet:
     def __init__(self, packet_sh2: bytearray) -> None:
         """header = PacketHeader(packet_byte_count, channel_number, sequence_number, report_id_number)"""
         self.header = self.header_from_buffer(packet_sh2)
-        #self.data = packet_sh2[4:self.byte_count]
+        # self.data = packet_sh2[4:self.byte_count]
         self.packet_sh2 = packet_sh2
 
     def __str__(self) -> str:
@@ -459,7 +456,7 @@ class Packet:
         outstr += "\n\t\t*******************************\n"
         # ascii = ''.join(chr(b) if 32 <= b <= 126 else f" x{b:02X}" for b in self.packet_sh2[:length])
         # outstr += f"\nDBG::\t\t ascii: {ascii}\n"
-        
+
         # preliminary decoding of packets
         if self.byte_count - 4 == 15 and self.channel == SHTP_CHAN_INPUT and self.report_id == 0xfb:
             outstr += f"DBG::\t\t first report: {_REPORTS_DICTIONARY[self.packet_sh2[9]]} ({hex(self.packet_sh2[9])})\n"
@@ -476,11 +473,13 @@ class Packet:
             index = 5
 
             # Tag Processors: {tag_id: (name, format, subtract_header_4, clamp_max_1024)}
-            tag_dictionary = {0: ("TAG_NULL", 'S', 0, 0), 1: ("TAG_GUID", '<I', 0, 0), 2: ("Max Cargo Write", '<H', 1, 0),
-                 3: ("Max Cargo Read", '<H', 1, 0), 4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1),
-                 5: ("TAG_MAX_TRANSFER_READ", '<H', 0, 1), 6: ("TAG_NORMAL_CHANNEL", '<B', 0, 0),
-                 7: ("TAG_WAKE_CHANNEL", '<B', 0, 0), 8: ("TAG_APP_NAME", 'S', 0, 0), 9: ("TAG_CHANNEL_NAME", 'S', 0, 0),
-                 10: ("TAG_ADV_COUNT", '<B', 0, 0), 0x80: ("Version", 'S', 0, 0)}
+            tag_dictionary = {0: ("TAG_NULL", 'S', 0, 0), 1: ("TAG_GUID", '<I', 0, 0),
+                              2: ("Max Cargo Write", '<H', 1, 0),
+                              3: ("Max Cargo Read", '<H', 1, 0), 4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1),
+                              5: ("TAG_MAX_TRANSFER_READ", '<H', 0, 1), 6: ("TAG_NORMAL_CHANNEL", '<B', 0, 0),
+                              7: ("TAG_WAKE_CHANNEL", '<B', 0, 0), 8: ("TAG_APP_NAME", 'S', 0, 0),
+                              9: ("TAG_CHANNEL_NAME", 'S', 0, 0),
+                              10: ("TAG_ADV_COUNT", '<B', 0, 0), 0x80: ("Version", 'S', 0, 0)}
 
             while index < length:
                 tag, tag_len = self.packet_sh2[index:index + 2]
@@ -492,7 +491,7 @@ class Packet:
                 if tag not in tag_dictionary:
                     outstr += f"Uknown tag = {tag}\n"
                     continue
-                
+
                 name, fmt, sub_hdr, clamp = tag_dictionary[tag]
                 if fmt == 'S':
                     s = "" if tag == 0 else f": {value.decode('ascii')}"
@@ -500,14 +499,15 @@ class Packet:
                 else:
                     v = unpack_from(fmt, value)[0]
                     if sub_hdr:
-                        v -= 4; s = ", without header"
+                        v -= 4
+                        s = ", without header"
                     else:
                         s = ""
                     if clamp: v = min(v, 1024)
                     outstr += f"DBG::\t\t {name}: {v}{s}\n"
 
             return outstr
-        
+
         # Advertisement Response provides sensor information that is printed with debug=True
         # SPI uses New Style Advertisement
         if self.byte_count - 4 == 34 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
@@ -528,12 +528,14 @@ class Packet:
             outstr += f"DBG::\t\t Max Transfer Read: {max_transfer_read}\n"
             idx = p + 11  # strings, null terminated
             end = self.byte_count
+
             def read_cstring(buf, start):
                 i = start
                 while i < end and buf[i] != 0:
                     i += 1
                 s = buf[start:i].decode("ascii", "ignore")
                 return s, i + 1
+
             app_name, idx = read_cstring(self.packet_sh2, idx)
             chan_name, idx = read_cstring(self.packet_sh2, idx)
             ctl_name, idx = read_cstring(self.packet_sh2, idx)
@@ -836,10 +838,10 @@ class BNO08X:
         self._reset_mismatch = False  # if reset_pin set make sure hardware reset done, else pin bad
 
         self._report_periods_dictionary_us = {}
-              
+
         self._features = {}  # Create feature objects once
-        self._report_values = {} # most recent sensor values, only if enabled
-        self._unread_report_count = {} # reports received but not yet read by user
+        self._report_values = {}  # most recent sensor values, only if enabled
+        self._unread_report_count = {}  # reports received but not yet read by user
 
         self.reset_sensor()
 
@@ -857,7 +859,7 @@ class BNO08X:
         # wait for response, ignore packets until _GET_FEATURE_RESPONSE (0xfc)
         try:
             packet_response = self._wait_for_packet(
-                SHTP_CHAN_COMMAND, 
+                SHTP_CHAN_COMMAND,
                 _COMMAND_ADVERTISE,
                 timeout=_FEATURE_ENABLE_TIMEOUT,
                 handle_packet=False
@@ -868,7 +870,6 @@ class BNO08X:
             raise RuntimeError(f"BNO08X init: not able to get Command Advertise: {hex(_COMMAND_ADVERTISE)}")
 
         self._dbg("********** End __init__ *************\n")
-
 
     def _on_interrupt(self, pin):
         """
@@ -915,7 +916,6 @@ class BNO08X:
             print(f"***update_sensors: #packet={num_packets}")
         return num_packets
 
-
     # 3-Tuple Sensor Reports + accuracy + timestamp
     @property
     def linear_acceleration(self):
@@ -924,7 +924,7 @@ class BNO08X:
         if report_id not in self._features:  # If object not found, create and cache it
             self._features[report_id] = SensorFeature3(self, report_id)
         return self._features[report_id]
-    
+
     @property
     def acceleration(self):
         report_id = BNO_REPORT_ACCELEROMETER
@@ -1214,17 +1214,6 @@ class BNO08X:
         """
         processed_count = 0
         end_time = ticks_ms() + 1  # 1 ms guard
-        
-#         if self._unread_reports_exist:
-#             processed_count += 1
-#             print(f"{self._unread_reports_exist=}")
-#             return
-#
-#         else:
-#             packet = self._read_packet(wait=True)
-#             self._handle_packet(packet)
-#             processed_count += 1
-#             
 
         while self._data_ready and processed_count < _MAX_PACKET_PROCESS:
             if ticks_diff(ticks_ms(), end_time) >= 0:
@@ -1236,37 +1225,16 @@ class BNO08X:
             if packet is None:
                 break
 
+            if len(packet.packet_sh2) > 0 and packet.packet_sh2[0] == 0x00:
+                processed_count += 1
+                continue
+
             self._handle_packet(packet)
             processed_count += 1
-            # * commented out self._dbg in time critical loops for normal operation
-            # self._dbg(f"Processed {processed_count} packet{'s' if processed_count > 1 else ''}")
-            # self._dbg(f"{new_packet=}")
+
         return processed_count
 
-#     def _wait_for_packet(self, channel, report_id=None, timeout=0.5):
-#         """ Wait for a specifc packet to be received on channel, ignore others """
-#         start_time = ticks_ms()
-#         while _elapsed_sec(start_time) < timeout:
-#             try:
-#                 packet = self._read_packet(wait=False)
-#             except PacketError:
-#                 sleep_ms(1)
-#                 continue
-# 
-#             # Continue to read & ignore packets until we find selected response
-#             if packet is not None:
-#                 if (packet.channel == channel and
-#                         (report_id is None or report_id == packet.report_id)):
-#                     self._handle_packet(packet)
-#                     return packet
-# 
-#             sleep_ms(1)
-# 
-#         raise RuntimeError(
-#             f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s"
-#         )
-
-    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True): 
+    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True):
         """ Wait for a specifc packet to be received on channel, ignore others """
         start_time = ticks_ms()
         while _elapsed_sec(start_time) < timeout:
@@ -1277,12 +1245,10 @@ class BNO08X:
                 continue
 
             if packet is not None:
-                if (packet.channel == channel and
-                    (report_id is None or report_id == packet.report_id)):
-                    
-                    if handle_packet:  # <--- NEW CHECK
+                if packet.channel == channel and (report_id is None or report_id == packet.report_id):
+                    if handle_packet:
                         self._handle_packet(packet)
-                    
+
                     return packet
 
             sleep_ms(1)
@@ -1300,18 +1266,16 @@ class BNO08X:
             return
 
         self._in_handle = True
-        #data_view = memoryview(packet.packet_sh2)
         data_length = len(packet.packet_sh2)
 
         try:
-            # offsets for header
+            # offsets to skip over SHTP header
             next_byte_index = 4
             report_count = 4
 
             while next_byte_index < data_length:
                 report_id = packet.packet_sh2[next_byte_index]
 
-                # Look up required byte count for each Report type, only enabled ones defined, others commented out
                 if report_id <= 0x2d:  # highest in SH-2 reference, many unimplemented
                     # TODO: consider removing try
                     try:
@@ -1319,12 +1283,14 @@ class BNO08X:
                     except:
                         self._dbg(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
                         self._dbg(f"Invalid Report Id {next_byte_index=}, next 6 bytes follows:")
-                        self._dbg(f"_handle_packet: {[hex(x) for x in packet.packet_sh2[next_byte_index: next_byte_index + 8]]}")
+                        self._dbg(
+                            f"_handle_packet: {[hex(x) for x in packet.packet_sh2[next_byte_index: next_byte_index + 8]]}")
 
                         # todo remove after debut, don't like skipping
                         print(f"INVALID REPORT ID in_handle_packet {report_id} {hex(report_id)=}")
                         print(f"INVALID REPORT ID {next_byte_index=}, up to 8 bytes follow:")
-                        print(f"_handle_packet: {[hex(x) for x in packet.packet_sh2[next_byte_index: next_byte_index + 8]]}")
+                        print(
+                            f"_handle_packet: {[hex(x) for x in packet.packet_sh2[next_byte_index: next_byte_index + 8]]}")
                         raise NotImplementedError(f"Un-implemented Report ({hex(report_id)=}) not supported yet.")
                 else:
                     required_bytes = _REPORT_LENGTHS.get(report_id, 0)
@@ -1363,7 +1329,7 @@ class BNO08X:
         # Base Timestamp (0xfb)
         if report_id == _BASE_TIMESTAMP:
             self._last_base_timestamp_us = unpack_from("<I", report_bytes, 1)[0] * 100
-            
+
             # remove self._dbg from time critical operations
             # self._dbg(f"Base Timestamp (0xfb): {self._last_base_timestamp_us} usec")
             return
@@ -1371,7 +1337,7 @@ class BNO08X:
         # Timestamp Rebase (0xfa), see this when _BASE_TIMESTAMP wraps so use this instead
         if report_id == _TIMESTAMP_REBASE:
             self._last_base_timestamp_us = unpack_from("<I", report_bytes, 1)[0] * 100
-            
+
             # remove self._dbg from time critical operations
             # self._dbg(f"Timestamp Rebase (0xfa): {self._last_base_timestamp_us} usec")
             return
@@ -1440,19 +1406,19 @@ class BNO08X:
         if 0x01 <= report_id <= 0x09:
             # uctypes-based sensor reports, Parses 3-tuple, 4-tuple, and 5-tuple
             scalar, count, _ = _AVAIL_SENSOR_REPORTS[report_id]
-            
+
             if count == 3:
                 v1, v2, v3 = unpack_from("<hhh", report_bytes, 4)
-                sensor_data = (v1*scalar, v2*scalar, v3*scalar)
+                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar)
             elif count == 4:
                 v1, v2, v3, v4 = unpack_from("<hhhh", report_bytes, 4)
-                sensor_data = (v1*scalar, v2*scalar, v3*scalar, v4*scalar)
+                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar, v4 * scalar)
             elif count == 5:  # Note likely different scalar when implement count=5
                 v1, v2, v3, v4, e1 = unpack_from("<hhhhh", report_bytes, 4)
-                sensor_data = (v1*scalar, v2*scalar, v3*scalar, v4*scalar, e1)
+                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar, v4 * scalar, e1)
                 raise NotImplementedError(f"5-tuple Reports not supported yet,likely different scalar for e1.")
             else:
-                raise ValueError("...",)
+                raise ValueError("...", )
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
             byte2 = report_bytes[2]
@@ -1689,7 +1655,7 @@ class BNO08X:
     def _data_ready(self):
         """ Returns True if at least one new interrupt seen """
         return self.last_interrupt_us != self.prev_interrupt_us
-    
+
     @property
     def _unread_reports_exist(self):
         """True only when processed sensor reports exist"""
