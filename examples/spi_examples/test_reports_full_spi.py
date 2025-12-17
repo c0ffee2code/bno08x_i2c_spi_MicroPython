@@ -10,12 +10,11 @@
 # Enabling reports at high frequencies 100Hz, some sensors can not run at this rate
 # sensor provides frequencies close to what was requested
 
-from time import sleep
-
 from bno08x import *
 
 from machine import SPI, Pin
 from spi import BNO08X_SPI
+from utime import ticks_ms
 
 int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # Interrupt, enables BNO to signal when ready
 reset_pin = Pin(15, Pin.OUT, value=1)  # Reset, signal BNO to reset
@@ -28,7 +27,7 @@ wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
 spi = SPI(0, baudrate=3000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
 
-bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin, debug=False)
+bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin)
 
 print(spi) # baudrate=3000000 required
 print("Start")

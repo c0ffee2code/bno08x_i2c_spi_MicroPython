@@ -4,9 +4,7 @@
 # Calibration of three main sensors.
 # see README.md "Basic User Sensor Calibration Procedure" for recommened sensor movements
 
-from time import sleep
-
-from bno08x import *
+from bno08x import BNO08X
 from i2c import BNO08X_I2C
 from machine import I2C, Pin
 from utime import ticks_ms, ticks_diff
@@ -15,7 +13,7 @@ int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # BNO sensor (INT)
 reset_pin = Pin(15, Pin.OUT)  # BNO sensor (RST)
 
 i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=400_000)
-bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin, debug=False)
+bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin)
 
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
 print("Start")
@@ -33,16 +31,14 @@ calibration_good = False
 status = ""
 
 # Begin calibration
-bno.begin_calibration
+bno.begin_calibration()
 
 # Wait sensor to be ready to calibrate
-bno.calibration_status
+bno.calibration_status()
 
 print(f"\nCalibration: Continue for {good_before_save} secs of \"Medium Accuracy\" to \"High Accuracy\"\n")
 
-
 last_print = ticks_ms()
-start_good = None
 
 while True:
     bno.update_sensors() # Always update sensors, avoid using sleep
