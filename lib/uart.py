@@ -105,7 +105,7 @@ class BNO08X_UART(BNO08X):
         raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
 
     def _send_packet(self, channel, data):
-        """ 1.2.3.1 UART Operation:"Bytes sent to the BNO08X must be separated by at least 100us."""
+        """ 1.2.3.1 UART Operation: Bytes sent to the BNO08X must be separated by at least 100us."""
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
         write_length = data_length + 4
