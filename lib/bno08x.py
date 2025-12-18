@@ -42,23 +42,41 @@ Delay
    the delay field may be populated, then delay and the timebase reference
    are used to calculate the sensor sample's actual timestamp.
 
-Current best sensor update periods - BNO086 responded with 2ms update frequeny:
-- spi:   2.1ms (476 Hz)
-- i2c:   3.3ms (303 Hz)
-- uart:  ?.?ms ( ?? Hz)
+Data sent for single sensor report:
+Quaternion = timebase + sensor report = 23 bytes
+* i2c rereads header (uart doesn't) so i2c reads 27 bytes
 
-TODO: decide on call functions, wait for new data, or return what have
-TODO: How to handle unimplemented reports that are sent by sensor? Pass them without error?
-TODO: apply spi optimizations to uart ?  fix UART mis-framing (with quaternions?)
-TODO: test UART with Reset & Interrupt pins
+Raw Interface Payload frequencies (freq & any framing)
+ - spi (3_000_000) is 1.2x faster than UART (3_000_000)
+ - spi (3_000_000) is 8.4x faster than I2C (3_000_000).
+ - uart (3_000_000) is 6.9x faster than i2c (400_000).
+
+but i2c & spi must also reread header, 1.1739 penalty (27/23) for quaternion
+ - SPI is 1.04x faster than UART.  (76.666/73.737 = 1.0397)
+ - SPI is 6.9x faster than I2C.  (622.077/73.737 = 8.436)
+ - UART is 8.1x faster than I2C.  (622.0773/76.666 = 8.114)
+
+Current best sensor update periods - BNO086 responded with 1ms update frequeny:
+- spi:   ?.?ms (476 Hz)
+- uart:  2.7ms (370 Hz) with 2.5ms report frequency
+- i2c:   4.7ms (208 Hz) with 2.5ms report frequency
+At report frequencies shorter than above, the period will increase, likey because the host isn't
+keeping up with the sensor and the sensor packages multiple packets together and this library only
+returns data for the latest of each package of reports.
+
+TODO: debug spi, which sometimes garbles report data, likely with old data from buffer?
+TODO: on SPI, (2.5ms reports), ~31 of 500 iters, show _parse_packets processing timed out, 10ms, why? bacing up
+TODO: on SPI, (5ms reports), ~1 of 1000 iters, show _parse_packets processing timed out, 10ms, why? bacing up
+TODO: on UART, (2.5ms reports), ~8 of 1000 iters, show _parse_packets processing timed out, 10ms, why? bacing up
 
 Possible future projects:
+FUTURE: Capture all report data in a multi-package report (without overwrite), provide user all results
 FUTURE: explore adding simple 180 degree calibration(0x0c), page 55 SH-2, but will need move request reports
 FUTURE: include estimated ange in full quaternion implementation, maybe make new modifier bno.quaternion.est_angle
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.9.1"
+__version__ = "0.9.2"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -511,7 +529,7 @@ class Packet:
             outstr += "\nDBG::\t\t - Reset Complete Acknowledged, 0xf8 reports to follow\n"
 
         # Advertisement Response provides sensor information that is printed with debug=True
-        # I2C & UART use New Style Advertisement
+        # I2C, SPI, & UART use New Style Advertisement
         if self.byte_count - _SHTP_HEADER_LEN == 51 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             length = len(self.packet_sh2)
@@ -545,7 +563,7 @@ class Packet:
                     v = unpack_from(fmt, value)[0]
                     if sub_hdr:
                         v -= 4
-                        s = ", without header"
+                        s = ", (payload only, header will add 4)"
                     else:
                         s = ""
                     if clamp: v = min(v, 1024)
@@ -554,7 +572,7 @@ class Packet:
             return outstr
 
         # Advertisement Response provides sensor information that is printed with debug=True
-        # SPI uses New Style Advertisement
+        # TODO? why at one version did SPI use Old Style Advertisement?
         if self.byte_count - _SHTP_HEADER_LEN == 34 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             p = _SHTP_HEADER_LEN + 4
@@ -644,6 +662,13 @@ class SensorFeature1:
     def enable(self, hertz=None):
         """Method to enable the feature with a given report rate (hertz)."""
         return self._bno.enable_feature(self.feature_id, hertz)
+    
+    @property
+    def updated(self):
+        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+            self._bno._unread_report_count[self.feature_id] = 0
+            return True
+        return False
 
     @property
     def value(self):
@@ -672,6 +697,13 @@ class SensorFeature2:
         """Method to enable the feature with a given report rate (hertz)."""
         return self._bno.enable_feature(self.feature_id, hertz)
 
+    @property
+    def updated(self):
+        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+            self._bno._unread_report_count[self.feature_id] = 0
+            return True
+        return False
+
     # This method allows the object to be implicitly converted to the (v1, v2) tuple.
     def __iter__(self):
         """Allows direct unpacking: x, y = bno.activity_classifier"""
@@ -694,6 +726,13 @@ class SensorFeature3:
     def enable(self, hertz=None):
         """Method to enable the feature with a given report rate (hertz)."""
         return self._bno.enable_feature(self.feature_id, hertz)
+    
+    @property
+    def updated(self):
+        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+            self._bno._unread_report_count[self.feature_id] = 0
+            return True
+        return False
 
     # --- Properties to retrieve the latest data from the BNO instance ---
     @property
@@ -743,6 +782,13 @@ class SensorFeature4:
     def enable(self, hertz=None):
         """Method to enable the feature with a given report rate (hertz)."""
         return self._bno.enable_feature(self.feature_id, hertz)
+
+    @property
+    def updated(self):
+        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+            self._bno._unread_report_count[self.feature_id] = 0
+            return True
+        return False
 
     # --- Properties to retrieve the latest data from the BNO instance ---
     @property
@@ -819,6 +865,13 @@ class RawSensorFeature:
     def enable(self, hertz=None):
         """Method to enable the feature with a given report rate (hertz)."""
         return self._bno.enable_feature(self.feature_id, hertz)
+    
+    @property
+    def updated(self):
+        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+            self._bno._unread_report_count[self.feature_id] = 0
+            return True
+        return False
 
     def __iter__(self):
         try:
@@ -1259,9 +1312,11 @@ class BNO08X:
             packet = self._read_packet(wait=False)
             if packet is None:
                 break
-
+            
+            processed_count += 1
             packet_sh2 = packet.packet_sh2
             data_length = len(packet_sh2)
+            
             if data_length > 0 and packet_sh2[0] == 0x00:
                 processed_count += 1
                 continue
