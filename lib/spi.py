@@ -35,16 +35,17 @@ from struct import pack_into
 
 import uctypes
 from machine import Pin
-from utime import ticks_ms, ticks_diff, sleep_us, sleep_ms
+from utime import ticks_ms, ticks_us, ticks_diff, sleep_us, sleep_ms
 
 from bno08x import BNO08X, Packet, PacketError, DATA_BUFFER_SIZE
 
 # TODO Need to find definitive value
 # 272 bytes shown in ll-test GitHub
-# 256 returned by Advertisement debug=True, TAG_MAX_CARGO_PLUS_HEADER_READ
+# 252 bytes Advertisement return payload length, TAG_MAX_CARGO_PLUS_HEADER_READ
 #     BUT, then Arduino code subtracts 4, which is header size?
-# 282: x01 x1a   spi header+advert
-# 284: x01 x1c   i2c header+advert
+# 252: uart payload max in  Advertisement
+# ???: i2c payload max in  Advertisement
+
 _SHTP_MAX_CARGO_PACKET_BYTES = 284
 
 _HEADER_STRUCT = {
@@ -114,28 +115,43 @@ class BNO08X_SPI(BNO08X):
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
 
-    def _wait_for_int(self):
-        """
-        Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
-        This resolves the 10ms starvation issue caused by polling.
-        """
-        initial_int_time = self.last_interrupt_us
-        start_time = ticks_ms()
-  
-        self._wake_signal()
-
+#     def _wait_for_int(self):
+#         """
+#         Waits for the BNO08x H_INTN pin to assert (go low) using the IRQ flag.
+#         This resolves the 10ms starvation issue caused by polling.
+#         """
+#         initial_int_time = self.last_interrupt_us
+#         start_time = ticks_ms()
+#   
+#         self._wake_signal()
+# 
+#         if self._int_pin.value() == 0:
+#             # self._dbg("INT is active low (0) on entry.")
+#             return
+# 
+#         # Poll the interrupt timestamp for a change
+#         while ticks_diff(ticks_ms(), start_time) < 10: 
+#             if self.last_interrupt_us != initial_int_time:
+#                 return 
+#             # sleep_us(100)
+#         
+#         raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
+    @micropython.native
+    def _wait_for_int(self, timeout_us=1000):
         if self._int_pin.value() == 0:
-            # self._dbg("INT is active low (0) on entry.")
             return
 
-        # Poll the interrupt timestamp for a change
-        while ticks_diff(ticks_ms(), start_time) < 10: 
-            if self.last_interrupt_us != initial_int_time:
-                return 
-            # sleep_us(100)
-        
-        raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
-
+        start = ticks_us()
+        # Check the raw pin value directly
+        while True:
+            if self._int_pin.value() == 0:
+                return
+            
+            if ticks_diff(ticks_us(), start) > timeout_us:
+                break
+                
+        raise RuntimeError("BNO08X UART _wait_for_int Timeout: 1ms exceeded")
+    
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
@@ -170,34 +186,26 @@ class BNO08X_SPI(BNO08X):
         # ---start--- SPI Header read
         self._cs_pin.value(0)
         sleep_us(1)
-        #self._spi.readinto(self._header, 0x00)
         self._spi.readinto(header_mv, 0x00)
-
-        self._cs_pin.value(1)
+        # Not:e CS is still 0, must raise to (1) after payload read, or when errors out
         # ----end---- SPI Header read 
 
-#         raw_packet_bytes = (self._header[1] << 8) | self._header[0]
-#         channel = self._header[2]
-#         seq = self._header[3]
-#         self._data_buffer[0:4] = self._header[0:4]
-        raw = bytes(header_mv)  # forces materialization of bytearray
-        raw_packet_bytes = raw[0] | (raw[1] << 8)
-        channel = raw[2]
-        seq = raw[3]
-        
-        # * comment out self._dbg for normal operation, adds delay even with debug=False
-        # self._dbg(f" _read_packet Header {self._header=}")
-        sleep_us(100)
-        
-        try:
-            self._rx_sequence_number[channel] = seq  # SH2 Sequence number
-        except:
-            print(f" _read_packet Header bad channel=({channel}),{hex(raw_packet_bytes)=}, {seq=}")
- 
-        if raw_packet_bytes == 0:  # Fast skip
+        header_view = uctypes.struct(uctypes.addressof(self._header), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
+        raw_packet_bytes = header_view.packet_bytes
+        if raw_packet_bytes == 0:  # fast return if 0 payload
+            self._cs_pin.value(1)
             # self._dbg("_read_packet: packet_bytes=0, returning None.")
             return None
-        if raw_packet_bytes == 0xFFFF:  # bad sensor 
+        
+        channel = header_view.channel
+        seq = header_view.sequence
+        # * comment out self._dbg for normal operation, adds delay even with debug=False
+        # self._dbg(f" _read_packet Header {self._header=}")
+        
+        self._rx_sequence_number[channel] = seq  # SH2 Sequence number
+
+        if raw_packet_bytes == 0xFFFF:  # this shows bad sensor
+            self._cs_pin.value(1)
             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
@@ -206,17 +214,12 @@ class BNO08X_SPI(BNO08X):
             self._data_buffer = bytearray(packet_bytes)
 
         if packet_bytes <= _SHTP_MAX_CARGO_PACKET_BYTES:
-            # read the payload, notice re-reads the header, up to default of 512 bytes
-            #mv = memoryview(self._data_buffer)
-
+            
+            # read the payload, note since CS never de-asserted this neverre-reads the header            self._data_buffer[0:4] = self._header
+            mv = memoryview(self._data_buffer)[4:packet_bytes]
+            
             # ---start--- SPI Payload read
-            if self._int_pin.value() != 0:
-                self._wait_for_int()
-                
-            self._cs_pin.value(0)
-            sleep_us(1)
-            # self._spi.readinto(mv, 0x00)
-            self._spi.readinto(self._data_buffer, 0x00)
+            self._spi.readinto(mv, 0x00)
             self._cs_pin.value(1)  
             # ----end---- SPI Payload read
 
@@ -238,14 +241,15 @@ class BNO08X_SPI(BNO08X):
                 self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
                 # raise PacketError("read partial packet")
 
-        new_packet = Packet(self._data_buffer[:packet_bytes])
-        # new_packet = Packet(bytes(mv))
+        new_packet = Packet(bytes(self._data_buffer[:packet_bytes]))
 
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
         # self._dbg(f" Received Packet *************{new_packet}")
-        sleep_ms(1)
+        
+        # TODO REMOVE 10 MSEC SLEEP after fix _check_id, current _check_id may call before interrupt hit
+        sleep_ms(10)
 
         return new_packet
