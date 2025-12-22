@@ -36,7 +36,7 @@ In UART mode, the BNO08X sends an advertisement message when it is ready to comm
 
 """
 
-from struct import pack_into
+from struct import pack_into, pack
 
 import micropython
 import uctypes
@@ -169,7 +169,7 @@ class BNO08X_UART(BNO08X):
             self._uart.read(self._uart.any())
         self._dbg("*** UART Cleared stale UART buffer after reset")
 
-        self._dbg("*** Hard Reset End in UART, awaiting acknowledgement (0xf8)")
+        self._dbg("*** Hard Reset End in UART, awaiting acknowledgement (0xf8)\n")
 
     def _wake_signal(self):
         """UART has no wake signal, when called in the base class this is a noop"""
@@ -180,15 +180,10 @@ class BNO08X_UART(BNO08X):
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
         write_length = data_length + 4
-        byte_buffer = bytearray(1)
-
-        pack_into("<H", self._data_buffer, 0, write_length)
-        self._data_buffer[2] = channel
-        self._data_buffer[3] = seq
-        self._data_buffer[4: 4 + data_length] = data
-
+        send_packet = bytearray(pack("<HBB", write_length, channel, seq) + data)
+        
         if self._debug:
-            packet = Packet(self._data_buffer)
+            packet = Packet(send_packet)
             self._dbg(f"  Sending Packet *************{packet}")
 
         # ---start--- UART Send packet - handle SHTP protocol
@@ -197,20 +192,12 @@ class BNO08X_UART(BNO08X):
         self._uart.write(b"\x01")  # SHTP byte
         sleep_us(100)
 
-        # Scan outgoing packet for UART reserved bytes (0x7e or 0x7d), if so escape it
-        outgoing_bytes = []
-        for b in self._data_buffer[0:write_length]:
-            if b == 0x7e or b == 0x7d:
-                outgoing_bytes.append(0x7D)  # add UART Control Escape
-                outgoing_bytes.append(b ^ 0x20)  # XOR with 0x20
+        # Escape reserved bytes (0x7E or 0x7D)
+        for b in send_packet:
+            if b in (0x7E, 0x7D):
+                self._uart.write(bytes([0x7D, b ^ 0x20]))
             else:
-                outgoing_bytes.append(b)
-
-        # Write all bytes with 100us delay
-        byte_buffer = bytearray(1)
-        for b in outgoing_bytes:
-            byte_buffer[0] = b
-            self._uart.write(byte_buffer)
+                self._uart.write(bytes([b]))
             sleep_us(100)
 
         # UART end byte
@@ -288,7 +275,7 @@ class BNO08X_UART(BNO08X):
             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
-
+        
         if packet_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(packet_bytes)
 

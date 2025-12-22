@@ -31,7 +31,7 @@ Each Sensor needs:
 * they can share the three SPI signals which must be connected to all the BNOs.
 
 """
-from struct import pack_into
+from struct import pack_into, pack
 
 import uctypes
 from machine import Pin
@@ -136,6 +136,7 @@ class BNO08X_SPI(BNO08X):
 #             # sleep_us(100)
 #         
 #         raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
+
     @micropython.native
     def _wait_for_int(self, timeout_us=1000):
         if self._int_pin.value() == 0:
@@ -156,26 +157,21 @@ class BNO08X_SPI(BNO08X):
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
         write_length = data_length + 4
-        pack_into("<HBB", self._data_buffer, 0, write_length, channel, seq)
-
-        mv = memoryview(self._data_buffer)
-        mv[4:4 + data_length] = data
+        send_packet = bytearray(pack("<HBB", write_length, channel, seq) + data)
 
         if self._debug:
-            packet = Packet(self._data_buffer)
+            packet = Packet(send_packet)
             self._dbg(f"  Sending Packet *************{packet}")
 
         self._cs_pin.value(0)
         sleep_us(1)
-        self._spi.write(mv[:write_length])  # also zero-copy
+        self._spi.write(send_packet)
         self._cs_pin.value(1)
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
         sleep_ms(10)
         return
 
-# TODO DEBUG - merged _read_header & _read_packet -  should be faster
-#
     def _read_packet(self, wait=None):
         wait = bool(wait)  # both wait=None wait=False are non-blocking
                 
@@ -194,14 +190,14 @@ class BNO08X_SPI(BNO08X):
         raw_packet_bytes = header_view.packet_bytes
         if raw_packet_bytes == 0:  # fast return if 0 payload
             self._cs_pin.value(1)
-            # self._dbg("_read_packet: packet_bytes=0, returning None.")
+            #self._dbg("_read_packet: packet_bytes=0, returning None.")
             return None
         
         channel = header_view.channel
         seq = header_view.sequence
         # * comment out self._dbg for normal operation, adds delay even with debug=False
-        # self._dbg(f" _read_packet Header {self._header=}")
-        
+        # self._dbg(f"packet header: {packet_bytes=} {channel=} {seq=} ")
+
         self._rx_sequence_number[channel] = seq  # SH2 Sequence number
 
         if raw_packet_bytes == 0xFFFF:  # this shows bad sensor
@@ -215,7 +211,8 @@ class BNO08X_SPI(BNO08X):
 
         if packet_bytes <= _SHTP_MAX_CARGO_PACKET_BYTES:
             
-            # read the payload, note since CS never de-asserted this neverre-reads the header            self._data_buffer[0:4] = self._header
+            # read the payload, note since CS never de-asserted this neverre-reads the header
+            self._data_buffer[0:4] = self._header
             mv = memoryview(self._data_buffer)[4:packet_bytes]
             
             # ---start--- SPI Payload read
@@ -242,14 +239,16 @@ class BNO08X_SPI(BNO08X):
                 # raise PacketError("read partial packet")
 
         new_packet = Packet(bytes(self._data_buffer[:packet_bytes]))
+        #new_packet = Packet(self._data_buffer[:packet_bytes])
+
 
         seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
-        # self._dbg(f" Received Packet *************{new_packet}")
+        # self._dbg(f" Received Packet *************{new_packet} {packet_bytes=}")
         
         # TODO REMOVE 10 MSEC SLEEP after fix _check_id, current _check_id may call before interrupt hit
-        sleep_ms(10)
+        # sleep_ms(10)
 
         return new_packet
