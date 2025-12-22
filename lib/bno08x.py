@@ -988,22 +988,6 @@ class BNO08X:
 
         raise RuntimeError("{reset_type} reset not acknowledged, check BNO086 wiring")
 
-        #################################
-
-#         if self._check_id() and not self._reset_mismatch:
-#             self._dbg(f"*** {reset_type} reset successful, acknowledged with Product ID 0xF8 response")
-#             sleep_ms(100)  # allow SHTP time to settle
-#             self._tx_sequence_number = [0, 0, 0, 0, 0, 0]
-#             self._rx_sequence_number = [0, 0, 0, 0, 0, 0]
-#             return
-# 
-#         if self._reset_mismatch:
-#             raise RuntimeError("Reset cause mismatch; check reset_pin wiring")
-# 
-#         # sleep_ms(600)  # is this excessive?
-# 
-#         raise RuntimeError(f"Failed to get valid Product ID Response (0xf8) with {reset_type} reset")
-
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
 
     def update_sensors(self):
@@ -1187,13 +1171,9 @@ class BNO08X:
             raise ValueError(f"Unknown Tare Basis Report ID: {basis}")
 
         self._dbg(f"TARE: using {hex(basis)=} on {axis=}...")
+        # rotation vector (quaternion) to be tared
         self._send_me_command(_ME_TARE_COMMAND,
-                              [
-                                  _ME_TARE_NOW,  # Perform Tare Now
-                                  axis,
-                                  basis,  # rotation vector (quaternion) to be tared
-                                  0, 0, 0, 0, 0, 0,  # 6-11 Reserved
-                              ]
+                              [_ME_TARE_NOW, axis, basis, 0, 0, 0, 0, 0, 0, ]
                               )
         return axis, basis
 
@@ -1201,16 +1181,13 @@ class BNO08X:
         """ Clear the Tare data to flash. """
         self._dbg(f"TARE: Clear Tare...")
         self._send_me_command(_ME_TARE_COMMAND,
-                              [
-                                  _ME_TARE_SET_REORIENTATION,  # reorientate
-                                  0, 0, 0, 0, 0, 0, 0, 0, ]  # 1-8 Reserved
+                              [_ME_TARE_SET_REORIENTATION, 0, 0, 0, 0, 0, 0, 0, 0, ]
                               )
         return
 
     def tare_reorientation(self, i, j, k, r):
         """
-        Send quaternion reorientation for tare. Can use any of the 3 quaternions.
-        Used to set orientation of sensor for example of sensor pcb is mounted vertically
+        Tare with any of the 3 quaternions. Set orientation of sensor (es: sensor pcb is vertical)
         you can use this to set left edge down, and the other directions.
         """
         # Convert floats to int16 using Q14 fixed-point
