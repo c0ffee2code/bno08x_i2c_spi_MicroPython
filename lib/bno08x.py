@@ -972,7 +972,7 @@ class BNO08X:
         self._wake_signal()
         self._send_packet(SHTP_CHAN_CONTROL, data)
 
-        # Process packets until the ID appears
+        # Process packets until product_id_received
         start = ticks_ms()
         while not self._product_id_received and ticks_diff(ticks_ms(), start) < 1000:
             self._parse_packets()
@@ -1500,7 +1500,7 @@ class BNO08X:
 
         # Feature response (0xfc) - This report issued when feature is enabled or updated
         if report_id == _GET_FEATURE_RESPONSE:
-            _report_id, feature_report_id = unpack_from("<BB", report_bytes)
+            feature_report_id = report_bytes[1]
             report_interval = unpack_from("<I", report_bytes, 5)[0]
             self._report_values[feature_report_id] = _INITIAL_REPORTS.get(feature_report_id, (0.0, 0.0, 0.0, 0, 0.0))
             self._unread_report_count[feature_report_id] = 0
@@ -1619,15 +1619,21 @@ class BNO08X:
         self._wake_signal()
         self._send_packet(SHTP_CHAN_CONTROL, feature_enable_request)
 
-        # wait for response, ignore packets until _GET_FEATURE_RESPONSE (0xfc)
-        try:
-            report_bytes = self._wait_for_packet(SHTP_CHAN_CONTROL, _GET_FEATURE_RESPONSE,
-                                                 timeout=_FEATURE_ENABLE_TIMEOUT)
+        # clear older entries, if reinitializing
+        if feature_id in self._report_periods_dictionary_us:
+            del self._report_periods_dictionary_us[feature_id]
 
-            return 1_000_000. / self._report_periods_dictionary_us[feature_id]
+        start_time = ticks_ms()
+        timeout_ms = _FEATURE_ENABLE_TIMEOUT * 1000
+        
+        while feature_id not in self._report_periods_dictionary_us:
+            self._parse_packets()
 
-        except RuntimeError:
-            raise RuntimeError(f"BNO08X: enable_feature: not able to enable feature: {hex(feature_id)}")
+            if ticks_diff(ticks_ms(), start_time) > timeout_ms:
+                raise RuntimeError(f"BNO08X: Timeout enabling feature: {hex(feature_id)}")
+
+        actual_interval = self._report_periods_dictionary_us[feature_id]
+        return 1_000_000. / actual_interval if actual_interval > 0 else 0.0
 
     def print_report_period(self):
         """ Print out heading and row for each report enabled. """
