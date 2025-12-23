@@ -624,7 +624,7 @@ class SensorFeature1:
 
     @property
     def updated(self):
-        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
+        if self._bno._unread_report_count[self.feature_id] > 0:
             self._bno._unread_report_count[self.feature_id] = 0
             return True
         return False
@@ -632,12 +632,14 @@ class SensorFeature1:
     @property
     def value(self):
         try:
+            self._bno._unread_report_count[self.feature_id] = 0
             return self._bno._report_values[self.feature_id]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
 
     def __iter__(self):
+        self._bno._unread_report_count[self.feature_id] = 0
         yield self.value
 
     def __repr__(self):
@@ -657,17 +659,16 @@ class SensorFeature2:
 
     @property
     def updated(self):
-        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
-            self._bno._unread_report_count[self.feature_id] = 0
-            return True
-        return False
+        return self._bno._unread_report_count[self.feature_id] > 0
 
     # convert object to (v1, v2) tuple
     def __iter__(self):
         """Direct unpacking, ex:  x, y = bno.activity_classifier"""
         try:
-            x, y = self._bno._report_values[self.feature_id]
-            return iter((x, y))
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            yield val[0]
+            yield val[1]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -686,17 +687,15 @@ class SensorFeature3:
 
     @property
     def updated(self):
-        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
-            self._bno._unread_report_count[self.feature_id] = 0
-            return True
-        return False
+        return self._bno._unread_report_count[self.feature_id] > 0
 
     @property
     def meta(self):
         """Returns (accuracy, timestamp_ms)."""
         try:
-            _, _, _, acc, ts = self._bno._report_values[self.feature_id]
-            return acc, ts
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            return val[3], val[4]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -705,8 +704,9 @@ class SensorFeature3:
     def full(self):
         """Returns (v1, v2, v3, accuracy, timestamp_ms)."""
         try:
+            val = self._bno._report_values[self.feature_id]
             self._bno._unread_report_count[self.feature_id] = 0
-            return self._bno._report_values[self.feature_id]
+            return val
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -714,8 +714,11 @@ class SensorFeature3:
     def __iter__(self):
         """Direct unpacking, ex: x, y, z = bno.acceleration"""
         try:
-            x, y, z, _, _ = self._bno._report_values[self.feature_id]
-            return iter((x, y, z))
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            yield val[0]
+            yield val[1]
+            yield val[2]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -739,16 +742,14 @@ class SensorFeature4:
 
     @property
     def updated(self):
-        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
-            self._bno._unread_report_count[self.feature_id] = 0
-            return True
-        return False
+        return self._bno._unread_report_count[self.feature_id] > 0
 
     @property
     def meta(self):
         try:
-            _, _, _, _, acc, ts = self._bno._report_values[self.feature_id]
-            return acc, ts
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            return val[4], val[5]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -757,8 +758,9 @@ class SensorFeature4:
     def full(self):
         """Returns (v1, v2, v3, real, accuracy, timestamp_ms)."""
         try:
+            val = self._bno._report_values[self.feature_id]
             self._bno._unread_report_count[self.feature_id] = 0
-            return self._bno._report_values[self.feature_id]
+            return val
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -767,9 +769,9 @@ class SensorFeature4:
     def euler(self):
         """Returns converted Euler 3-tuple plus  accuracy and timestamp_ms."""
         try:
-            x, y, z, real, _, _ = self._bno._report_values[self.feature_id]
-            roll, pitch, yaw = euler_conversion(x, y, z, real)
-            return roll, pitch, yaw
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            return euler_conversion(val[0], val[1], val[2], val[3])
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -778,18 +780,21 @@ class SensorFeature4:
     def euler_full(self):
         """Returns converted Euler 3-tuple plus  accuracy and timestamp_ms."""
         try:
-            x, y, z, real, acc, ts = self._bno._report_values[self.feature_id]
-            roll, pitch, yaw = euler_conversion(x, y, z, real)
-            return roll, pitch, yaw, acc, ts
+            data = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            return euler_conversion(data[0], data[1], data[2], data[3]) + (data[4], data[5])
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
 
     def __iter__(self):
-        """Direct unpacking, ex: x, y, z, real = bno.quaternion"""
         try:
-            x, y, z, real, _, _ = self._bno._report_values[self.feature_id]
-            return iter((x, y, z, real))
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            yield val[0]
+            yield val[1]
+            yield val[2]
+            yield val[3]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
@@ -816,15 +821,14 @@ class RawSensorFeature:
 
     @property
     def updated(self):
-        if self._bno._unread_report_count.get(self.feature_id, 0) > 0:
-            self._bno._unread_report_count[self.feature_id] = 0
-            return True
-        return False
+        return self._bno._unread_report_count[self.feature_id] > 0
 
     def __iter__(self):
         try:
-            sensor_values = self._bno._report_values[self.feature_id][:self.data_count]
-            return iter(sensor_values)
+            val = self._bno._report_values[self.feature_id]
+            self._bno._unread_report_count[self.feature_id] = 0
+            for i in range(self.data_count):
+                yield val[i]
         except KeyError:
             raise RuntimeError(
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()"
@@ -884,7 +888,7 @@ class BNO08X:
 
         self._features = {}  # Create feature objects once
         self._report_values = {}  # most recent sensor values, only if enabled
-        self._unread_report_count = {}  # reports received but not yet read by user
+        self._unread_report_count = bytearray(45)  # array, reports received but read by user, 1:45, (0x01 to 0x2d)
 
         self.reset_sensor()
 
@@ -1645,11 +1649,6 @@ class BNO08X:
     def _data_ready(self):
         """ Returns True if at least one new interrupt seen """
         return self.last_interrupt_us != self.prev_interrupt_us
-
-    @property
-    def _unread_reports_exist(self):
-        """True only when processed sensor reports exist"""
-        return any(count > 0 for count in self._unread_report_count.values())
 
 
 # must define alias after BNO08X class, so class SensorReading4 class can use this
