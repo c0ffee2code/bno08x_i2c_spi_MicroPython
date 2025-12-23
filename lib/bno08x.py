@@ -860,7 +860,7 @@ class BNO08X:
         Main flow of Sensor read:
         1. user calls bno.acceleration - reads sensor data/metadata from _report_values[report_id]
         2. _process_available_packets() - a packet can have multiple reports (0xfb, 0x01, 0x01)
-        3. _handle_packet() - splits packets into multiple reports, FIFO new overwrites old
+           splits packets into multiple reports, FIFO new overwrites old
         4. _process_report()
             a. processes sensor reports directly
                 i. sensor results & metadata (accuracy & timestamp) put into _report_values[report_id]
@@ -921,20 +921,22 @@ class BNO08X:
         data = bytearray(2)
         data[0] = _COMMAND_ADVERTISE
         data[1] = 0
+        self._advertisement_received = False
+        
         self._wake_signal()
         self._send_packet(SHTP_CHAN_COMMAND, data)
+        
         # wait for response, ignore packets until _GET_FEATURE_RESPONSE (0xfc)
-        try:
-            packet_response = self._wait_for_packet(
-                SHTP_CHAN_COMMAND,
-                _COMMAND_ADVERTISE,
-                timeout=_FEATURE_ENABLE_TIMEOUT,
-                handle_packet=False
-            )
-            self._dbg(f" Received Packet *************{packet_response}")
+        start_time = ticks_ms()
+        timeout_ms = _FEATURE_ENABLE_TIMEOUT * 1000
+        while not self._advertisement_received:
+            self._parse_packets()
 
-        except RuntimeError:
-            raise RuntimeError(f"BNO08X init: not able to get Command Advertise: {hex(_COMMAND_ADVERTISE)}")
+            if ticks_diff(ticks_ms(), start_time) > timeout_ms:
+                 raise RuntimeError(f"BNO08X init: Timed out waiting for Advertise response")
+
+        self._dbg(f"Advertisement Received on Channel 0\n")
+        self._advertisement_received = False
 
         self._dbg("********** End __init__ *************\n")
 
@@ -1298,7 +1300,7 @@ class BNO08X:
             if data_length > 0 and packet_sh2[0] == 0x00:
                 continue
 
-            # --- START INLINED _handle_packet ---
+            # --- START INLINED splits split packet into multiple reports ---
             next_byte_index = _SHTP_HEADER_LEN  # Payload after the 4-byte SHTP header
             while next_byte_index < data_length:
                 report_id = packet_sh2[next_byte_index]
@@ -1324,64 +1326,9 @@ class BNO08X:
                     self._process_control_report(report_id, report_view)
                     break
 
-            # --- END INLINED _handle_packet  ---
+            # --- END INLINED splits split packet into multiple reports  ---
 
         return processed_count
-
-    def _handle_packet(self, packet):
-        """
-        Splits a packet into multiple reports and process them in FIFO order.
-        NOTE: **** this code has inlined in _parse_packets for efficiency ****
-        """
-        data_length = len(packet.packet_sh2)
-        next_byte_index = _SHTP_HEADER_LEN  # offset to skip over SHTP header
-        report_count = 0
-
-        while next_byte_index < data_length:
-            report_id = packet.packet_sh2[next_byte_index]
-            required_bytes = _REPORT_LENGTHS.get(report_id, 0)
-
-            if required_bytes == 0:
-                self._dbg(f"UNSUPPORTED Report ID {hex(report_id)} at offset {next_byte_index}, ** SKIPPING ONE BYTE")
-                next_byte_index += 1
-                continue
-
-            unprocessed_byte_count = data_length - next_byte_index
-            if unprocessed_byte_count < required_bytes:
-                self._dbg(f"Unprocessable truncated batch ERROR: {unprocessed_byte_count} bytes")
-                break
-
-            report_view = packet.packet_sh2[next_byte_index: next_byte_index + required_bytes]
-            self._process_report(report_id, report_view)
-
-            report_count += 1
-            next_byte_index += required_bytes
-
-        # * commented out self._dbg in time critical loops
-        # self._dbg(f"HANDLING {report_count} PACKET{'S' if report_count > 1 else ''}...")
-
-    def _wait_for_packet(self, channel, report_id=None, timeout=0.5, handle_packet=True):
-        """ Wait for a specifc packet to be received on channel, ignore others """
-        start_time = ticks_ms()
-        while _elapsed_sec(start_time) < timeout:
-            try:
-                packet = self._read_packet(wait=False)
-            except PacketError:
-                sleep_ms(1)
-                continue
-
-            if packet is not None:
-                if packet.channel == channel and (report_id is None or report_id == packet.report_id):
-                    if handle_packet:
-                        self._handle_packet(packet)
-
-                    return packet
-
-            sleep_ms(1)
-
-        raise RuntimeError(
-            f"Timed out waiting for packet on channel {channel} with ReportID {report_id} after {timeout}s"
-        )
 
     def _process_report(self, report_id: int, report_bytes: bytearray) -> None:
         """
@@ -1542,19 +1489,59 @@ class BNO08X:
             self._product_id_received = True
             return
         
-        # 0x00 first wake advertisement
+        # 0x00 first wake advertisement (280 byte payload, or 51 byte payload)
         if report_id == 0x00:
-            self._dbg("*** First wake response on Channel 0x00")
-            self._dbg("Data:")
+            self._dbg("*** Advertisement response on Channel 0x00")
             length = len(report_bytes) 
-            outstr = f"Data Len: {length - _SHTP_HEADER_LEN}"
+            self._dbg("Data:")
+            outstr = f"\nDBG::\t\t Data Len: {length - _SHTP_HEADER_LEN}"
             for idx, packet_byte in enumerate(report_bytes[4:length]):
                 packet_index = idx + _SHTP_HEADER_LEN
                 if (packet_index % 4) == 0:
                     outstr += f"\nDBG::\t\t[0x{packet_index:02X}] "
                 outstr += f"0x{packet_byte:02X} "
-            outstr += "\n\t\t*******************************\n"
+            outstr += "\n\t\t*******************************"
+            outstr += "\n\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            length = len(report_bytes)
+            outstr += f"DBG::\t\t length = (length)\n"
+            index = _SHTP_HEADER_LEN + 1
+
+            # Tag Processors: {tag_id: (name, format, subtract_header_4, clamp_max_1024)}
+            tag_dictionary = {0: ("TAG_NULL", 'S', 0, 0), 1: ("TAG_GUID", '<I', 0, 0),
+                              2: ("Max Cargo Write", '<H', 1, 0),
+                              3: ("Max Cargo Read", '<H', 1, 0), 4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1),
+                              5: ("TAG_MAX_TRANSFER_READ", '<H', 0, 1), 6: ("TAG_NORMAL_CHANNEL", '<B', 0, 0),
+                              7: ("TAG_WAKE_CHANNEL", '<B', 0, 0), 8: ("TAG_APP_NAME", 'S', 0, 0),
+                              9: ("TAG_CHANNEL_NAME", 'S', 0, 0),
+                              10: ("TAG_ADV_COUNT", '<B', 0, 0), 0x80: ("Version", 'S', 0, 0)}
+
+            while index < length:
+                tag, tag_len = report_bytes[index:index + 2]
+                value_index = index + 2
+                next_index = value_index + tag_len
+                value = report_bytes[value_index:next_index]
+                index = next_index
+
+                if tag not in tag_dictionary:
+                    outstr += f"Uknown tag = {tag}\n"
+                    continue
+
+                name, fmt, sub_hdr, clamp = tag_dictionary[tag]
+                if fmt == 'S':
+                    s = "" if tag == 0 else f": {value.decode('ascii')}"
+                    outstr += f"DBG::\t\t {name}{s}\n"
+                else:
+                    v = unpack_from(fmt, value)[0]
+                    if sub_hdr:
+                        v -= 4
+                        s = ", (payload only, header will add 4)"
+                    else:
+                        s = ""
+                    if clamp: v = min(v, 1024)
+                    outstr += f"DBG::\t\t {name}: {v}{s}\n"
+
             self._dbg(f"{outstr}")
+            self._advertisement_received = True
             return
         
         if report_id == 0x01:
