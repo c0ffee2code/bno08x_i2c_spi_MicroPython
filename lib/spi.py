@@ -31,13 +31,14 @@ Each Sensor needs:
 * they can share the three SPI signals which must be connected to all the BNOs.
 
 """
-from struct import pack_into, pack
+from struct import  pack
 
+import micropython
 import uctypes
 from machine import Pin
-from utime import ticks_ms, ticks_us, ticks_diff, sleep_us, sleep_ms
+from utime import ticks_us, ticks_diff, sleep_us, sleep_ms
 
-from bno08x import BNO08X, Packet, DATA_BUFFER_SIZE
+from bno08x import BNO08X, Packet
 
 # TODO Need to find definitive value
 # 272 bytes shown in ll-test GitHub
