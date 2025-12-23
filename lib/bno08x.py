@@ -64,10 +64,10 @@ At report frequencies shorter than above, the period will increase, likey becaus
 keeping up with the sensor and the sensor packages multiple packets together and this library only
 returns data for the latest of each package of reports.
 
-TODO: debug spi, which sometimes garbles report data, likely with old data from buffer?
-TODO: on SPI, (2.5ms reports), ~31 of 500 iters, show _parse_packets processing timed out, 10ms, why? bacing up
-TODO: on SPI, (5ms reports), ~1 of 1000 iters, show _parse_packets processing timed out, 10ms, why? bacing up
-TODO: on UART, (2.5ms reports), ~8 of 1000 iters, show _parse_packets processing timed out, 10ms, why? bacing up
+TODO: debug spi uart, which sometimes garbles report data, likely with old data from buffer?
+TODO: on SPI, (2.5ms reports), ~31 of 500 iters, show _parse_packets processing timed out, 10ms, why? backing up
+TODO: on SPI, (5ms reports), ~1 of 1000 iters, show _parse_packets processing timed out, 10ms, why? backing up
+TODO: on UART, (2.5ms reports), ~8 of 1000 iters, show _parse_packets processing timed out, 10ms, why? backing up
 
 Possible future projects:
 FUTURE: Capture all report data in a multi-package report (without overwrite), provide user all results
@@ -76,7 +76,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.9.2"
+__version__ = "0.9.3"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -288,7 +288,6 @@ _Q_POINT_9_SCALAR = 2 ** (9 * -1)
 _Q_POINT_8_SCALAR = 2 ** (8 * -1)
 _Q_POINT_4_SCALAR = 2 ** (4 * -1)
 
-
 _REPORT_LENGTHS = {
     # Sensor Reports
     BNO_REPORT_ACCELEROMETER: 10,  # 0x01
@@ -331,13 +330,13 @@ _REPORT_LENGTHS = {
     #     BNO_REPORT_MOTION_REQUEST: 6,  # sent to host periodically? 0x2b
     #     BNO_REPORT_OPTICAL_FLOW: 24,  #  0x2c
     #     BNO_REPORT_DEAD_RECKONING: 60, #  0x2d
-    
+
     # Command Reports
     _COMMAND_RESPONSE: 16,  # 0xf1
     _REPORT_PRODUCT_ID_RESPONSE: 16,  # 0xf8
     _GET_FEATURE_RESPONSE: 17,  # 0xfc
     _BASE_TIMESTAMP: 5,  # 0xfb
-    _TIMESTAMP_REBASE: 5,  #0xfa
+    _TIMESTAMP_REBASE: 5,  # 0xfa
 }
 
 # Channel 1 Command Reports
@@ -530,7 +529,7 @@ class Packet:
             outstr += f"DBG::\t\t first report: {_REPORTS_DICTIONARY[self.packet_sh2[9]]} ({hex(self.packet_sh2[9])})\n"
 
         # New Stye Advertisement Response provides sensor information
-        if self.byte_count - _SHTP_HEADER_LEN == 51 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
+        if self.byte_count - _SHTP_HEADER_LEN >= 51 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             length = len(self.packet_sh2)
             index = _SHTP_HEADER_LEN + 1
@@ -552,7 +551,7 @@ class Packet:
                 index = next_index
 
                 if tag not in tag_dictionary:
-                    outstr += f"Uknown tag = {tag}\n"
+                    outstr += f"DBG::\t\t Unknown tag = {tag}\n"
                     continue
 
                 name, fmt, sub_hdr, clamp = tag_dictionary[tag]
@@ -575,7 +574,7 @@ class Packet:
         if self.byte_count - _SHTP_HEADER_LEN == 34 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
             outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             return outstr
-        
+
         return outstr
 
     @property
@@ -865,7 +864,7 @@ class BNO08X:
             a. processes sensor reports directly
                 i. sensor results & metadata (accuracy & timestamp) put into _report_values[report_id]
                 ii. update count in _unread_report_count[report_id] += 1
-            b. _process_control_report - timestamps and vatious command responses/reports
+            b. _process_control_report - timestamps and various command responses/reports
 
         Note: timestamp is ms(millisec) since 1st BNO08x interrupt, which is close to sensor power up.
     """
@@ -922,10 +921,10 @@ class BNO08X:
         data[0] = _COMMAND_ADVERTISE
         data[1] = 0
         self._advertisement_received = False
-        
+
         self._wake_signal()
         self._send_packet(SHTP_CHAN_COMMAND, data)
-        
+
         # wait for response, ignore packets until _GET_FEATURE_RESPONSE (0xfc)
         start_time = ticks_ms()
         timeout_ms = _FEATURE_ENABLE_TIMEOUT * 1000
@@ -933,7 +932,7 @@ class BNO08X:
             self._parse_packets()
 
             if ticks_diff(ticks_ms(), start_time) > timeout_ms:
-                 raise RuntimeError(f"BNO08X init: Timed out waiting for Advertise response")
+                raise RuntimeError(f"BNO08X init: Timed out waiting for Advertise response")
 
         self._dbg(f"Advertisement Received on Channel 0\n")
         self._advertisement_received = False
@@ -1274,7 +1273,7 @@ class BNO08X:
                 return
         raise RuntimeError("Could not save calibration data")
 
-    #     ############### private/helper methods ###############
+    # ############### private/helper methods ###############
 
     def _parse_packets(self) -> int:
         """ Parse packets and handle reports while data-ready is active."""
@@ -1300,13 +1299,13 @@ class BNO08X:
             if data_length > 0 and packet_sh2[0] == 0x00:
                 continue
 
-            # --- START INLINED splits split packet into multiple reports ---
+            # --- START INLINED splits a packet into multiple reports ---
             next_byte_index = _SHTP_HEADER_LEN  # Payload after the 4-byte SHTP header
             while next_byte_index < data_length:
                 report_id = packet_sh2[next_byte_index]
                 if channel in [2, 3, 5]:
                     required_bytes = report_length_map.get(report_id, 0)
-                    
+
                     if required_bytes == 0:
                         self._dbg(f"UNSUPPORTED Report ID {hex(report_id)} - SKIPPING ONE BYTE")
                         next_byte_index += 1
@@ -1320,13 +1319,12 @@ class BNO08X:
                     report_view = packet_sh2[next_byte_index: next_byte_index + required_bytes]
                     self._process_report(report_id, report_view)
                     next_byte_index += required_bytes
-                    
-                if channel in (0,1): # Channel 0 & 1 reports are all single reports
+
+                if channel in (0, 1):  # all reports on channel 0 & 1 are single reports
                     report_view = packet_sh2
                     self._process_control_report(report_id, report_view)
                     break
-
-            # --- END INLINED splits split packet into multiple reports  ---
+            # --- END INLINED splits a packet into multiple reports  ---
 
         return processed_count
 
@@ -1426,15 +1424,9 @@ class BNO08X:
         self._dbg(f"report: {report_bytes}")
         raise NotImplementedError(
             f"Un-implemented Report ({hex(report_id)=}) not supported yet.\n report: {report_bytes}")
-    
+
     def _process_control_report(self, report_id: int, report_bytes: bytearray) -> None:
-        """
-        Process control reports. These are only on Channel 2
-        process time-critical Timestamp methods first
-        :param report_id: report ID
-        :param report_bytes: portion of packet for report
-        :return:
-        """
+        """ Process control reports. These are only on Channel 0, 1, or 2 """
         # Base Timestamp (0xfb)
         if report_id == _BASE_TIMESTAMP:
             self._last_base_timestamp_us = unpack_from("<I", report_bytes, 1)[0] * 100
@@ -1459,12 +1451,12 @@ class BNO08X:
 
         # Command Response (0xf1) - confirms re-set(i2c & spi), ME or DCD
         if report_id == _COMMAND_RESPONSE:
-            self._dbg(f"***Command response (0xf1)")       
+            self._dbg(f"***Command response (0xf1)")
             command = report_bytes[2]
             # if command < 128:  # command & 0x80 == 0, ** removed to cut code size, info not that helpful
-            #    self._dbg(" - Response due to Command Request\n")
+            #    self._dbg(f" - Response due to Command Request\n")
             if command & 0x7f == 4:
-                self._dbg(" - Command to Re-Initialzed BNO08x received\n")                
+                self._dbg(" - Command to Re-Initialzed BNO08x received\n")
             return
 
         # Product ID Response (0xf8)
@@ -1488,11 +1480,11 @@ class BNO08X:
                     self._dbg(f"Expected 4 for Reset Cause with reset_pin, got {reset_cause}")
             self._product_id_received = True
             return
-        
+
         # 0x00 first wake advertisement (280 byte payload, or 51 byte payload)
         if report_id == 0x00:
             self._dbg("*** Advertisement response on Channel 0x00")
-            length = len(report_bytes) 
+            length = len(report_bytes)
             self._dbg("Data:")
             outstr = f"\nDBG::\t\t Data Len: {length - _SHTP_HEADER_LEN}"
             for idx, packet_byte in enumerate(report_bytes[4:length]):
@@ -1503,16 +1495,15 @@ class BNO08X:
             outstr += "\n\t\t*******************************"
             outstr += "\n\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
             length = len(report_bytes)
-            outstr += f"DBG::\t\t length = (length)\n"
+            outstr += f"DBG::\t\t length = {length}\n"
             index = _SHTP_HEADER_LEN + 1
 
             # Tag Processors: {tag_id: (name, format, subtract_header_4, clamp_max_1024)}
             tag_dictionary = {0: ("TAG_NULL", 'S', 0, 0), 1: ("TAG_GUID", '<I', 0, 0),
-                              2: ("Max Cargo Write", '<H', 1, 0),
-                              3: ("Max Cargo Read", '<H', 1, 0), 4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1),
-                              5: ("TAG_MAX_TRANSFER_READ", '<H', 0, 1), 6: ("TAG_NORMAL_CHANNEL", '<B', 0, 0),
-                              7: ("TAG_WAKE_CHANNEL", '<B', 0, 0), 8: ("TAG_APP_NAME", 'S', 0, 0),
-                              9: ("TAG_CHANNEL_NAME", 'S', 0, 0),
+                              2: ("Max Cargo Write", '<H', 1, 0), 3: ("Max Cargo Read", '<H', 1, 0),
+                              4: ("TAG_MAX_TRANSFER_WRITE", '<H', 0, 1), 5: ("TAG_MAX_TRANSFER_READ", '<H', 0, 1),
+                              6: ("TAG_NORMAL_CHANNEL", '<B', 0, 0), 7: ("TAG_WAKE_CHANNEL", '<B', 0, 0),
+                              8: ("TAG_APP_NAME", 'S', 0, 0), 9: ("TAG_CHANNEL_NAME", 'S', 0, 0),
                               10: ("TAG_ADV_COUNT", '<B', 0, 0), 0x80: ("Version", 'S', 0, 0)}
 
             while index < length:
@@ -1523,7 +1514,7 @@ class BNO08X:
                 index = next_index
 
                 if tag not in tag_dictionary:
-                    outstr += f"Uknown tag = {tag}\n"
+                    outstr += f"\t\t Unknown tag = {tag}\n"
                     continue
 
                 name, fmt, sub_hdr, clamp = tag_dictionary[tag]
@@ -1543,11 +1534,11 @@ class BNO08X:
             self._dbg(f"{outstr}")
             self._advertisement_received = True
             return
-        
+
         if report_id == 0x01:
             self._dbg("Command Execution Response: SHTP_COMMAND (0x0)")
             self._dbg(" - Reset Complete Acknowledged, 0xf8 reports to follow\n")
-            return   
+            return
 
     def _handle_command_response(self, report_bytes: bytearray) -> None:
         report_body = unpack_from("<BBBBB", report_bytes)
@@ -1612,7 +1603,7 @@ class BNO08X:
 
         start_time = ticks_ms()
         timeout_ms = _FEATURE_ENABLE_TIMEOUT * 1000
-        
+
         while feature_id not in self._report_periods_dictionary_us:
             self._parse_packets()
 
