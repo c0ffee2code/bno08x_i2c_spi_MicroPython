@@ -36,21 +36,20 @@ In UART mode, the BNO08X sends an advertisement message when it is ready to comm
 
 """
 
-from struct import pack_into, pack
+from struct import pack
 
 import micropython
 import uctypes
 from machine import Pin
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
-from bno08x import BNO08X, Packet
+from bno08x import BNO08X
 
 # TODO Need to find definitive value
 # 272 bytes shown in ll-test GitHub
 # 256 returned by Advertisement debug=True, TAG_MAX_CARGO_PLUS_HEADER_READ
 #     BUT, then Arduino code subtracts 4, which is header size?
-# 282: x01 x1a   spi header+advert
-# 284: x01 x1c   i2c header+advert
+# 252: Advertisement spi, i2c, and uart:  header+payload = 256
 _SHTP_MAX_CARGO_PACKET_BYTES = 284
 
 _HEADER_STRUCT = {
@@ -83,27 +82,6 @@ class BNO08X_UART(BNO08X):
         # wake_pin must be NONE!  wake_pin/PS0 = 0 (gnd)
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
 
-#     def _wait_for_int(self):
-#         """
-#         Waits for the BNO08x int_pin to assert (go low) by monitoring 
-#         the change in the microsecond timestamp set by the ISR.
-#         """
-#         initial_int_time = self.last_interrupt_us
-#         start_time = ticks_ms()
-# 
-#         # Check if the interrupt is already active (was missed)
-#         if self._int_pin.value() == 0:
-#             # * comment out self._dbg for normal operation, adds delay even with debug=False
-#             # self._dbg("int_piun is active low (0) on entry.")
-#             return 
-#         
-#         # Poll the interrupt timestamp for a change
-#         while ticks_diff(ticks_ms(), start_time) < 10: 
-#             if self.last_interrupt_us != initial_int_time:
-#                 return 
-#             sleep_us(100)
-#         
-#         raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
     @micropython.native
     def _wait_for_int(self, timeout_us=1000):
         if self._int_pin.value() == 0:
@@ -114,12 +92,11 @@ class BNO08X_UART(BNO08X):
         while True:
             if self._int_pin.value() == 0:
                 return
-            
+
             if ticks_diff(ticks_us(), start) > timeout_us:
                 break
-                
+
         raise RuntimeError("BNO08X UART _wait_for_int Timeout: 1ms exceeded")
-    
 
     def _soft_reset(self):
         """
@@ -181,10 +158,9 @@ class BNO08X_UART(BNO08X):
         data_length = len(data)
         write_length = data_length + 4
         send_packet = bytearray(pack("<HBB", write_length, channel, seq) + data)
-        
+
         if self._debug:
-            packet = Packet(send_packet)
-            self._dbg(f"  Sending Packet *************{packet}")
+            self._dbg(f"  Sending Packet *************{self._packet_decode(write_length, channel, seq, data)}")
 
         # ---start--- UART Send packet - handle SHTP protocol
         self._uart.write(b"\x7e")  # start byte
@@ -209,8 +185,9 @@ class BNO08X_UART(BNO08X):
         return self._tx_sequence_number[channel]
 
     def _read_into(self, buf, start, end):
-        """used to read UART data for all reads """
-        for idx in range(start, end):
+        """used to read UART data for all reads, if encounter escap 0x7D it will read extra byte"""
+        idx = start
+        while idx < end:
             data = self._uart.read(1)
             try:
                 b = data[0]
@@ -223,15 +200,16 @@ class BNO08X_UART(BNO08X):
                     b = data[0]
                 except TypeError as e:
                     raise RuntimeError(f"_read_into Timeout reading escape sequence byte {idx}") from e
-                b ^= 0x20  # control escape
+                b ^= 0x20  # transform escaped byte
 
             buf[idx] = b
+            idx += 1  # Only increment once a logical byte is stored
 
     def _read_packet(self, wait=None):
         wait = bool(wait)  # both wait=None wait=False are non-blocking
         if wait:
             if self._uart.any() == 0:
-                self._wait_for_int() # Will raise a timeout if no new interrupt after 10ms
+                self._wait_for_int()  # Will raise a timeout if no new interrupt after 10ms
 
         # Buffer for Read of 4-byte SHTP header and later payload
         header_mv = memoryview(self._data_buffer)[:4]
@@ -243,15 +221,21 @@ class BNO08X_UART(BNO08X):
             data = self._uart.read(1)
             if not data:
                 if ticks_diff(ticks_ms(), start_time_read) > 100:
-                    return None
+                    return None, None
                 continue
-            b = data[0]
-            if b == 0x7E:
+            if data[0] == 0x7E:
+                break
+
+        # Skip any additional 0x7E bytes
+        while True:
+            data = self._uart.read(1)
+            if not data:
+                return None, None
+            if data[0] != 0x7E:
                 break
 
         # Read the SHTP Protocol ID (0x01)
-        data = self._uart.read(1)
-        if not data or data[0] != 0x01:
+        if data[0] != 0x01:
             raise RuntimeError(f"_read_packet header: Didn't find SHTP Protocol ID 0x01, saw {hex(data[0])}")
 
         # Read header bytes
@@ -261,9 +245,9 @@ class BNO08X_UART(BNO08X):
         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
         raw_packet_bytes = header_view.packet_bytes
         if raw_packet_bytes == 0:  # fast return if 0 payload
-            # self._dbg("_read_packet: packet_bytes=0, returning None.")
-            return None
-        
+            # self._dbg("_read_packet: packet_bytes=0, returning None, None.")
+            return None, None
+
         channel = header_view.channel
         seq = header_view.sequence
         # * comment out self._dbg for normal operation, adds delay even with debug=False
@@ -275,7 +259,7 @@ class BNO08X_UART(BNO08X):
             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
-        
+
         if packet_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(packet_bytes)
 
@@ -310,17 +294,15 @@ class BNO08X_UART(BNO08X):
                 self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
                 # raise PacketError("read partial packet")
 
-        new_packet = Packet(self._data_buffer[:packet_bytes])
-        seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
-        # self._dbg(f" Received Packet *************{new_packet}")
+        # self._dbg(f" Received Packet *************{self._print_decode_string(packet_bytes, channel, seq, mv[4:])}")
 
-        return new_packet
+        return self._data_buffer[4:packet_bytes], channel
 
     @property
     def _data_ready(self):
         """UART variant also has uart.any() fallback"""
-        #self._dbg(f"_data_ready: {self._uart.any()}")
+        # self._dbg(f"_data_ready: {self._uart.any()}")
         return self._uart.any() >= 4

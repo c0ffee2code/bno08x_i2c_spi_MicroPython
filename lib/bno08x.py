@@ -64,7 +64,10 @@ At report frequencies shorter than above, the period will increase, likey becaus
 keeping up with the sensor and the sensor packages multiple packets together and this library only
 returns data for the latest of each package of reports.
 
-TODO: debug spi uart, which sometimes garbles report data, likely with old data from buffer?
+TODO: check _parse_packets processing timed out, 10ms, seems reports backing up
+TODO:
+TODO: implement continiuation codes for i2c, spi, and uart
+
 TODO: on SPI, (2.5ms reports), ~31 of 500 iters, show _parse_packets processing timed out, 10ms, why? backing up
 TODO: on SPI, (5ms reports), ~1 of 1000 iters, show _parse_packets processing timed out, 10ms, why? backing up
 TODO: on UART, (2.5ms reports), ~8 of 1000 iters, show _parse_packets processing timed out, 10ms, why? backing up
@@ -76,7 +79,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.9.3"
+__version__ = "0.9.6"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -474,115 +477,7 @@ def _elapsed_sec(ticks_start):
     return ticks_diff(ticks_ms(), ticks_start) / 1000.0
 
 
-############ COMMAND PARSING ###########################
-def _insert_command_request_report(
-        command: int,
-        buffer: bytearray,
-        next_sequence_number: int,
-        command_params=None,
-) -> None:
-    if command_params and len(command_params) > 9:
-        raise AttributeError(f"Command request report max 9 arguments: {len(command_params)} given")
-    buffer[0] = _COMMAND_REQUEST
-    buffer[1] = next_sequence_number
-    buffer[2] = command
-    for _i in range(3, 12):
-        buffer[_i] = 0
-    if command_params is None:
-        return
-
-    for idx, param in enumerate(command_params):
-        buffer[3 + idx] = param
-
-
-class Packet:
-    """ A class representing a Sensor Hub Transport Packet (4-byte headers) """
-
-    def __init__(self, packet_sh2: bytearray) -> None:
-        """header = PacketHeader(packet_byte_count, channel_number, sequence_number, report_id_number)"""
-        self.header = self.header_from_buffer(packet_sh2)
-        # self.data = packet_sh2[4:self.byte_count]
-        self.packet_sh2 = packet_sh2
-
-    def __str__(self) -> str:
-        length = self.byte_count
-        outstr = "\n\t\t********** Packet *************\n"
-        outstr += "DBG::\t\tHeader:\n"
-        outstr += f"DBG::\t\t Packet Len: {length} ({hex(length)})\n"
-        outstr += f"DBG::\t\t Channel: {channels[self.channel]} ({hex(self.channel)})\n"
-        outstr += f"DBG::\t\t Sequence: {self.seq}\n"
-        if self.channel == SHTP_CHAN_INPUT:
-            report_name = _REPORTS_DICTIONARY.get(self.report_id)
-            outstr += f"DBG::\t\t Report Type: {report_name} ({hex(self.report_id)})\n"
-        if self.channel == SHTP_CHAN_CONTROL:
-            if self.report_id == 0xFC and length - _SHTP_HEADER_LEN >= 6 and self.report_id in _REPORTS_DICTIONARY:
-                # first report_id (self.data[0]), the report type to be enabled (self.data[1])
-                outstr += f"DBG::\t\t Feature Enabled: {_REPORTS_DICTIONARY[self.packet_sh2[5]]} ({hex(self.packet_sh2[5])})\n"
-        outstr += "\nDBG::\t\tData:\n"
-        outstr += f"DBG::\t\t Data Len: {length - _SHTP_HEADER_LEN}"
-        for idx, packet_byte in enumerate(self.packet_sh2[4:length]):
-            packet_index = idx + _SHTP_HEADER_LEN
-            if (packet_index % 4) == 0:
-                outstr += f"\nDBG::\t\t[0x{packet_index:02X}] "
-            outstr += f"0x{packet_byte:02X} "
-        outstr += "\n\t\t*******************************\n"
-
-        # preliminary decoding of packets
-        if self.byte_count - _SHTP_HEADER_LEN == 15 and self.channel == SHTP_CHAN_INPUT and self.report_id == 0xfb:
-            outstr += f"DBG::\t\t first report: {_REPORTS_DICTIONARY[self.packet_sh2[9]]} ({hex(self.packet_sh2[9])})\n"
-
-        # New Stye Advertisement Response provides sensor information
-        if self.byte_count - _SHTP_HEADER_LEN >= 51 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
-            outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
-            return outstr
-
-        # OLD Stye Advertisement Response of sensor information, parser removed to reduce code size
-        if self.byte_count - _SHTP_HEADER_LEN == 34 and self.channel == SHTP_CHAN_COMMAND and self.report_id == _COMMAND_ADVERTISE:
-            outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
-            return outstr
-
-        return outstr
-
-    @property
-    def byte_count(self) -> int:
-        return self.header.packet_byte_count
-
-    @property
-    def channel(self) -> int:
-        return self.header.channel_number
-
-    @property
-    def seq(self) -> int:
-        return self.header.sequence_number
-
-    @property
-    def report_id(self) -> int:
-        return self.header.report_id_number
-
-    @classmethod
-    def header_from_buffer(cls, packet_bytes: bytearray) -> PacketHeader:
-        """
-        Creates a `PacketHeader` object from a given buffer, BNO datasheet 5.2.2
-        First 4 bytes are actual SHTP header, 5th byte is the first report_id
-        """
-        header_data = unpack_from("<HBBB", packet_bytes, 0)
-        packet_byte_count = header_data[0] & ~0x8000
-        channel_number = header_data[1]
-        sequence_number = header_data[2]
-        report_id_number = header_data[3]
-        header = PacketHeader(packet_byte_count, channel_number, sequence_number, report_id_number)
-        return header
-
-    @classmethod
-    def is_error(cls, header: PacketHeader) -> bool:
-        """ header is an error condition"""
-        if header.channel_number > 5:
-            return True
-        if header.packet_byte_count == 0xFFFF and header.sequence_number == 0xFF:
-            return True
-        return False
-
-
+############ Sensor Methods ###########################
 class SensorFeature1:
     """ 1-tuple feature manager with methods for enable and reading"""
     __slots__ = ("_bno", "feature_id")
@@ -806,6 +701,7 @@ class RawSensorFeature:
                 f"Feature not enabled, use bno.{_REPORTS_DICTIONARY[self.feature_id]}.enable()") from None
 
 
+############ Base Class ###########################
 class BNO08X:
     """Library for the BNO08x IMUs from Ceva - Hillcrest Laboratories
         Main flow of Sensor read:
@@ -940,6 +836,46 @@ class BNO08X:
             raise RuntimeError(f"{reset_type} reset cause mismatch; check reset_pin wiring")
 
         raise RuntimeError(f"{reset_type} reset not acknowledged, check BNO086 wiring")
+
+    def _packet_decode(self, packet_length, channel, seq, payload):
+        """Packet decode for debugging driver, read/send packets decoded"""
+        outstr = "\n\t\t********** Packet *************\n"
+        outstr += "DBG::\t\tHeader:\n"
+        outstr += f"DBG::\t\t Packet Len: {packet_length} ({hex(packet_length)})\n"
+        outstr += f"DBG::\t\t Channel: {channels[channel]} ({hex(channel)})\n"
+        outstr += f"DBG::\t\t Sequence: {seq}\n"
+        report_id = payload[0]
+        if channel == SHTP_CHAN_INPUT:
+            report_name = _REPORTS_DICTIONARY.get(report_id)
+            outstr += f"DBG::\t\t Report Type: {report_name} ({hex(report_id)})\n"
+        if channel == SHTP_CHAN_CONTROL:
+            if report_id == 0xFC and packet_length - _SHTP_HEADER_LEN >= 6 and report_id in _REPORTS_DICTIONARY:
+                # first report_id (self.data[0]), the report type to be enabled (self.data[1])
+                outstr += f"DBG::\t\t Feature Enabled: {_REPORTS_DICTIONARY[payload[1]]} ({hex(payload[1])})\n"
+        outstr += "\nDBG::\t\tData:\n"
+        outstr += f"DBG::\t\t Data Len: {packet_length - _SHTP_HEADER_LEN}"
+        for idx, packet_byte in enumerate(payload[:packet_length - _SHTP_HEADER_LEN]):
+            packet_index = idx
+            if (packet_index % 4) == 0:
+                outstr += f"\nDBG::\t\t[0x{packet_index:02X}] "
+            outstr += f"0x{packet_byte:02X} "
+        outstr += "\n\t\t*******************************\n"
+
+        # preliminary decoding of packets
+        if packet_length - _SHTP_HEADER_LEN == 15 and channel == SHTP_CHAN_INPUT and report_id == 0xfb:
+            outstr += f"DBG::\t\t first report: {_REPORTS_DICTIONARY[payload[5]]} ({hex(payload[5])})\n"
+
+        # New Stye Advertisement Response provides sensor information
+        if packet_length - _SHTP_HEADER_LEN >= 51 and channel == SHTP_CHAN_COMMAND and report_id == _COMMAND_ADVERTISE:
+            outstr += "DBG::\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            return outstr
+
+        # OLD Stye Advertisement Response of sensor information, parser removed to reduce code size
+        if packet_length - _SHTP_HEADER_LEN == 34 and channel == SHTP_CHAN_COMMAND and report_id == _COMMAND_ADVERTISE:
+            outstr += "DBG::\t\tOld Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
+            return outstr
+
+        return outstr
 
     ############ USER VISIBLE REPORT FUNCTIONS ###########################
 
@@ -1193,7 +1129,7 @@ class BNO08X:
         self._dbg(f" ME Command {me_type}: {me_command=}")
         start_time = ticks_ms()
         local_buffer = self._command_buffer
-        _insert_command_request_report(
+        self._insert_command_request_report(
             me_type,
             self._command_buffer,
             self._tx_sequence_number[SHTP_CHAN_CONTROL],
@@ -1212,7 +1148,7 @@ class BNO08X:
         """ Save the self-calibration data uwing DCD save command"""
         start_time = ticks_ms()
         local_buffer = bytearray(12)
-        _insert_command_request_report(
+        self._insert_command_request_report(
             _SAVE_DCD_COMMAND,
             local_buffer,
             self._tx_sequence_number[SHTP_CHAN_CONTROL],
@@ -1225,7 +1161,24 @@ class BNO08X:
                 return
         raise RuntimeError("Could not save calibration data")
 
-    # ############### private/helper methods ###############
+    def _insert_command_request_report(self,
+                                       command: int,
+                                       buffer: bytearray,
+                                       next_sequence_number: int,
+                                       command_params=None,
+                                       ) -> None:
+        if command_params and len(command_params) > 9:
+            raise AttributeError(f"Command request report max 9 arguments: {len(command_params)} given")
+        buffer[0] = _COMMAND_REQUEST
+        buffer[1] = next_sequence_number
+        buffer[2] = command
+        buffer[3:12] = b'\x00' * 9
+
+        if command_params:
+            for idx, param in enumerate(command_params):
+                buffer[3 + idx] = param
+
+    # ############### private Core Engine methods ###############
 
     def _parse_packets(self) -> int:
         """ Parse packets into multiple reports, this must be efficient"""
@@ -1239,22 +1192,17 @@ class BNO08X:
                 self._dbg("_parse_packets processing timed out, 10ms")
                 break
 
-            packet = self._read_packet(wait=False)
-            if packet is None:
+            payload, channel = self._read_packet(wait=False)
+            if payload is None:
                 break
 
             processed_count += 1
-            channel = packet.channel
-            packet_sh2 = packet.packet_sh2
-            data_length = len(packet_sh2)
-
-            if data_length > 0 and packet_sh2[0] == 0x00:
-                continue
+            data_length = len(payload)
 
             # --- START INLINED splits a packet into multiple reports
-            next_byte_index = _SHTP_HEADER_LEN  # Payload after the 4-byte SHTP header
+            next_byte_index = 0
             while next_byte_index < data_length:
-                report_id = packet_sh2[next_byte_index]
+                report_id = payload[next_byte_index]
                 if channel in [2, 3, 5]:
                     required_bytes = report_length_map.get(report_id, 0)
 
@@ -1268,12 +1216,12 @@ class BNO08X:
                         self._dbg(f"UNSUPPORTED truncated packet ERROR: {unprocessed_byte_count} bytes")
                         break
 
-                    report_view = packet_sh2[next_byte_index: next_byte_index + required_bytes]
+                    report_view = payload[next_byte_index: next_byte_index + required_bytes]
                     self._process_report(report_id, report_view)
                     next_byte_index += required_bytes
 
                 if channel in (0, 1):  # all reports on channel 0 & 1 are single reports
-                    report_view = packet_sh2
+                    report_view = payload
                     self._process_control_report(report_id, report_view)
                     break
             # --- END INLINED splits a packet into multiple reports
@@ -1292,33 +1240,28 @@ class BNO08X:
         they have two prolematic report ids (0x00, and 0x01 which is same as acceleration below).
 
         Timestamps are msec since first sensor interrupt in float(FP) with 0.1ms resolution.
-        Host synched int or FP have problems such as overflow, wrap to quickly, or lack precision. 32-bit FP doesn't
-        have enough significant digits
+        Host synched int or FP32 have problems such as overflow, wrap to quickly, or lack precision. FP32 only has
+        6-7 significant digits
         Used to use problematic: self._sensor_ms = self.last_interrupt_ms - self._last_base_timestamp_us + delay_ms
         """
         # process typical sensor reports first
         if 0x01 <= report_id <= 0x09:
-            # uctypes-based sensor reports, Parses 3-tuple, 4-tuple, and 5-tuple
             scalar, count = _SENSOR_SCALING[report_id]
+            r = uctypes.struct(uctypes.addressof(report_bytes), _SENSOR_REPORT_LAYOUT, uctypes.LITTLE_ENDIAN)
 
             if count == 3:
-                v1, v2, v3 = unpack_from("<hhh", report_bytes, 4)
-                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar)
+                sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar)
             elif count == 4:
-                v1, v2, v3, v4 = unpack_from("<hhhh", report_bytes, 4)
-                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar, v4 * scalar)
-            elif count == 5:  # Note likely different scalar when implement count=5
-                v1, v2, v3, v4, e1 = unpack_from("<hhhhh", report_bytes, 4)
-                sensor_data = (v1 * scalar, v2 * scalar, v3 * scalar, v4 * scalar, e1)
-                raise NotImplementedError(f"5-tuple Reports not supported yet,likely different scalar for e1.")
+                sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar, r.v4 * scalar)
+            # future: handle 5-tuple, warning e1scalar for e1 will be different
+            # elif count == 5:
+            #    sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar, r.v4 * scalar, r.e1 * e1scalar)
             else:
-                raise ValueError("...", )
+                raise ValueError("Invalid sensor data count, 5-tuple not implemented")
 
             # Extract accuracy from byte2 low bits, Extract delay from byte2 & byte3(14 bits)
-            byte2 = report_bytes[2]
-            accuracy = byte2 & 0x03
-            delay_raw = ((byte2 >> 2) << 8) | report_bytes[3]
-            delay_ms = delay_raw * 0.1  # delay_ms is a float, we have 0.1ms accuracy
+            accuracy = r.byte2 & 0x03
+            delay_ms = (((r.byte2 >> 2) << 8) | r.byte3) * 0.1  # delay counts with 0.1ms ticks, convert to FP32
 
             # remove self._dbg from time critical operations
             # self._dbg(f"Report: {_REPORTS_DICTIONARY[report_id]}\nData: {sensor_data}, {accuracy=}, {delay_ms=}")
@@ -1443,43 +1386,43 @@ class BNO08X:
         if report_id == _ADVERTISE_REPORT:
             self._dbg("*** Advertisement response on Channel 0x00")
             length = len(report_bytes)
-            self._dbg("Data:")
-            outstr = f"\nDBG::\t\t Data Len: {length - _SHTP_HEADER_LEN}"
-            for idx, packet_byte in enumerate(report_bytes[4:length]):
-                packet_index = idx + _SHTP_HEADER_LEN
-                if (packet_index % 4) == 0:
-                    outstr += f"\nDBG::\t\t[0x{packet_index:02X}] "
+            outstr = f"\nDBG::\t\t Data Len: {length}"
+            for idx, packet_byte in enumerate(report_bytes):
+                if (idx % 4) == 0:
+                    outstr += f"\nDBG::\t\t[0x{idx:02X}] "
                 outstr += f"0x{packet_byte:02X} "
-            outstr += "\n\t\t*******************************"
-            outstr += "\n\t\tNew Style SHTP Advertisement Response (0x00), channel: SHTP_COMMAND (0x0)\n"
-            length = len(report_bytes)
-            outstr += f"DBG::\t\t length = {length}\n"
-            index = _SHTP_HEADER_LEN + 1
 
-            while index < length:
-                tag, tag_len = report_bytes[index:index + 2]
+            outstr += "\n\t\t*******************************"
+            outstr += "\n\t\tAdvertisement Response TLV Decoding:\n"
+
+            index = 1  # skip the Report ID (0x00) at payload[0]
+            while index + 2 <= length:
+                tag = report_bytes[index]
+                tag_len = report_bytes[index + 1]
                 value_index = index + 2
                 next_index = value_index + tag_len
+
+                if next_index > length:
+                    break
+
                 value = report_bytes[value_index:next_index]
-                index = next_index
 
-                if tag not in _tag_dictionary:
-                    outstr += f"\t\t Unknown tag = {tag}\n"
-                    continue
+                if tag in _tag_dictionary:
+                    name, fmt, sub_hdr, clamp = _tag_dictionary[tag]
 
-                name, fmt, sub_hdr, clamp = _tag_dictionary[tag]
-                if fmt == 'S':
-                    s = "" if tag == 0 else f": {value.decode('ascii')}"
-                    outstr += f"DBG::\t\t {name}{s}\n"
-                else:
-                    v = unpack_from(fmt, value)[0]
-                    if sub_hdr:
-                        v -= 4
-                        s = ", (payload only, header will add 4)"
+                    if fmt == 'S':
+                        decoded_str = bytes(value).decode('utf-8', 'ignore').strip('\x00')
+                        s = "" if tag == 0 else f": {decoded_str}"
+                        outstr += f"DBG::\t\t {name}{s}\n"
                     else:
-                        s = ""
-                    if clamp: v = min(v, 1024)
-                    outstr += f"DBG::\t\t {name}: {v}{s}\n"
+                        v = unpack_from(fmt, value, 0)[0]
+                        if sub_hdr: v -= 4
+                        if clamp: v = min(v, 1024)
+                        outstr += f"DBG::\t\t {name}: {v}\n"
+                else:
+                    outstr += f"DBG::\t\t Unknown tag = {tag}\n"
+
+                index = next_index
 
             self._dbg(f"{outstr}")
             self._advertisement_received = True

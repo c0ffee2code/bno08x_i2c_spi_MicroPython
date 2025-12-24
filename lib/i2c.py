@@ -8,14 +8,14 @@
 I2C Class that requires BNO08X base Class
 """
 
-from struct import pack_into, pack
+from struct import pack
 
 import uctypes
 from machine import Pin
 from micropython import const
 from utime import ticks_ms, ticks_diff, sleep_us
 
-from bno08x import BNO08X, Packet
+from bno08x import BNO08X
 
 _BNO08X_DEFAULT_ADDRESS = const(0x4B)
 _BNO08X_BACKUP_ADDRESS = const(0x4A)
@@ -24,8 +24,7 @@ _BNO08X_BACKUP_ADDRESS = const(0x4A)
 # 272 bytes shown in ll-test GitHub
 # 256 returned by Advertisement debug=True, TAG_MAX_CARGO_PLUS_HEADER_READ
 #     BUT, then Arduino code subtracts 4, which is header size?
-# 282: x01 x1a   spi header+advert
-# 284: x01 x1c   i2c header+advert
+# 252: Advertisement spi, i2c, and uart:  header+payload = 256
 _SHTP_MAX_CARGO_PACKET_BYTES = 284
 
 _HEADER_STRUCT = {
@@ -104,25 +103,24 @@ class BNO08X_I2C(BNO08X):
         if self._int_pin.value() == 0:
             # * comment out self._dbg for normal operation, adds delay even with debug=False
             # self._dbg("int_piun is active low (0) on entry.")
-            return 
-        
-        # Poll the interrupt timestamp for a change
-        while ticks_diff(ticks_ms(), start_time) < 10: 
+            return
+
+            # Poll the interrupt timestamp for a change
+        while ticks_diff(ticks_ms(), start_time) < 10:
             if self.last_interrupt_us != initial_int_time:
-                return 
+                return
             sleep_us(10)
-        
+
         raise RuntimeError(f"_wait_for_int timeout ({ticks_diff(ticks_ms(), start_time)}ms) waiting for int_pin")
 
     def _send_packet(self, channel, data):
         seq = self._tx_sequence_number[channel]
         data_length = len(data)
-        write_length = data_length + 4
+        write_length = data_length + 4  # _SHTP_HEADER_LEN=4
         send_packet = bytearray(pack("<HBB", write_length, channel, seq) + data)
 
         if self._debug:
-            packet = Packet(send_packet)
-            self._dbg(f"  Sending Packet *************{packet}")
+            self._dbg(f"  Sending Packet *************{self._packet_decode(write_length, channel, seq, data)}")
 
         self._i2c.writeto(self._bno_i2c_addr, send_packet)
 
@@ -132,32 +130,35 @@ class BNO08X_I2C(BNO08X):
     def _read_packet(self, wait=None):
         wait = bool(wait)  # both wait=None wait=False are non-blocking        
         # In I2C, data is ready if the INT pin is low OR if the user requested to wait.
+        if not wait and self._int.value() != 0:
+            return None, None
+
         if wait or self._int.value() == 0:
             if self._int.value() != 0:
-                self._wait_for_int() # Will raise a timeout if no new interrupt after 10ms
+                self._wait_for_int()  # Will raise a timeout if no new interrupt after 10ms
 
         # Read 4-byte SHTP header and process
         header_mv = memoryview(self._data_buffer)[:4]
         self._i2c.readfrom_into(self._bno_i2c_addr, header_mv)
 
-#         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
-#         raw_packet_bytes = header_view.packet_bytes
-#         channel = header_view.channel
-#         seq = header_view.sequence
-# TODO remove uctypes
-        
+        #         header_view = uctypes.struct(uctypes.addressof(self._data_buffer), _HEADER_STRUCT, uctypes.LITTLE_ENDIAN)
+        #         raw_packet_bytes = header_view.packet_bytes
+        #         channel = header_view.channel
+        #         seq = header_view.sequence
+        # TODO remove uctypes
+
         raw = bytes(header_mv)  # forces materialization of bytearray
         raw_packet_bytes = raw[0] | (raw[1] << 8)
+        if raw_packet_bytes == 0:  # Fast return, if only SHTP header
+            return None, None
+
         channel = raw[2]
         seq = raw[3]
-
         self._rx_sequence_number[channel] = seq  # SH2 Sequence number
 
-        if raw_packet_bytes == 0:  # Fast return, if only SHTP header
-            return None
         if raw_packet_bytes == 0xFFFF:  # bad sensor         
             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), sensor corrupted?")
-        
+
         packet_bytes = raw_packet_bytes & 0x7FFF
 
         if packet_bytes > len(self._data_buffer):
@@ -182,11 +183,10 @@ class BNO08X_I2C(BNO08X):
                 self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
                 # raise PacketError("read partial packet")
 
-        new_packet = Packet(self._data_buffer[:packet_bytes])
-        seq = new_packet.header.sequence_number
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False
-        # self._dbg(f" Received Packet *************{new_packet}")
+        # self._dbg(f" Received Packet *************{self._print_decode_string(packet_bytes, channel, seq, mv[4:])}")
 
-        return new_packet
+        # return packet's payload and channel, payload_length can be derived len(payload)
+        return mv[4:], channel
