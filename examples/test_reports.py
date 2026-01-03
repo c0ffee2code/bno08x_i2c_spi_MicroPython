@@ -15,11 +15,13 @@ from machine import I2C, Pin
 int_pin = Pin(14, Pin.IN, Pin.PULL_UP)  # BNO sensor (INT)
 reset_pin = Pin(15, Pin.OUT)  # BNO sensor (RST)
 
+address = 0x4b
 i2c0 = I2C(0, scl=Pin(13), sda=Pin(12), freq=400_000)
+print(f"I2C {hex(address)} found" if address in i2c0.scan() else f"ERROR: I2C not configured")
 
-bno = BNO08X_I2C(i2c0, address=0x4b, reset_pin=reset_pin, int_pin=int_pin)
-
+bno = BNO08X_I2C(i2c0, address=address, reset_pin=reset_pin, int_pin=int_pin)
 print("I2C devices found:", [hex(d) for d in i2c0.scan()])
+
 print("Start")
 print("====================================\n")
 
@@ -32,7 +34,8 @@ bno.print_report_period()
 
 print("\nStart loop:")
 while True:
-    # Required each loop to refresh sensor data
+    # Update required each loop to check if any sensor updated, print sensor data (some or all may be old data)
+    # see test_reports_full.py, for example of only printing a sensor when it is updated
     bno.update_sensors()
 
     print(f"\nsystem {ticks_ms()=}")
@@ -41,7 +44,7 @@ while True:
     print(f"\nAcceleration X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}  m/s²")
 
     mag_x, mag_y, mag_z = bno.magnetic
-    print(f"Magnetometer X: {mag_x:+.3f}  Y: {mag_y:+.3f}  Z: {mag_z:+.3f}  uT ms")
+    print(f"Magnetometer X: {mag_x:+.3f}  Y: {mag_y:+.3f}  Z: {mag_z:+.3f}  uT")
 
     gyro_x, gyro_y, gyro_z = bno.gyro
     print(f"Gyroscope    X: {gyro_x:+.3f}  Y: {gyro_y:+.3f}  Z: {gyro_z:+.3f}  rads/s")
