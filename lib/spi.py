@@ -168,8 +168,9 @@ class BNO08X_SPI(BNO08X):
         if payload_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(payload_bytes)
 
-        if payload_bytes <= _SHTP_MAX_CARGO_PACKET_BYTES:
-            # SPI Payload read, because CS was not de-asserted BNO08x will not resend header
+        # self._max_header_plus_cargo set in advertisement to 256, originally set to 284 to cover big advertisement packet
+        if payload_bytes <= self._max_header_plus_cargo:
+            # SPI only Payload read, because CS was not de-asserted BNO08x will not resend header
             mv = memoryview(self._data_buffer)[:payload_bytes]
             spi.readinto(mv, 0x00)
             cs_pin.value(1)
@@ -198,7 +199,7 @@ class BNO08X_SPI(BNO08X):
         self._rx_sequence_number[channel] = seq  # report sequence number
 
         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False, if self._debug also helps
-        # if self._debug:
-        #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
+        if self._debug:
+            self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
 
         return mv, channel, payload_bytes

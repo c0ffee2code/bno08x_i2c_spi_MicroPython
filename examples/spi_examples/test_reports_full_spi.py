@@ -30,29 +30,30 @@ cs_pin = Pin(17, Pin.OUT, value=1)
 wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
 spi = SPI(0, baudrate=3000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
-
-bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin)
-
 print(spi) # baudrate=3000000 required
+bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin)
+print(spi)
+
 print("Start")
 print("====================================\n")
 
-bno.acceleration.enable(100)
-bno.magnetic.enable(100)
-bno.gyro.enable(100)
-bno.quaternion.enable(100)
-
+bno.acceleration.enable(20)
+bno.magnetic.enable(20)
+bno.gyro.enable(20)
+bno.quaternion.enable(20)
 bno.print_report_period()
 
 print("\nStart loop:")
 while True:
     
-    # Required each loop to refresh sensor data
+    # Update required each loop to check if any sensor updated, print timestamp if any sensor was updated
     if bno.update_sensors() > 0:    
         ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
         print(f"\nsystem {ticks_ms()=},",
             f"time from BNO start: {ms_since_sensor_start/1000.0:.3f} s",
             f"({ms_since_sensor_start:.0f} ms)")
+    
+    # Only print sensor report if it has been updated since last loop
     
     if bno.acceleration.updated:
         accel_x, accel_y, accel_z, acc, ts_ms = bno.acceleration.full

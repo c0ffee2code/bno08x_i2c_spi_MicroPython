@@ -729,7 +729,7 @@ class BNO08X:
         # track RX(inbound) and TX(outbound) sequence numbers one per channel, one per direction
         self._rx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
         self._tx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
-        self._max_header_plus_cargo = 284 # big enough for 1st advertisement which will reset this to 256
+        self._max_header_plus_cargo = 284  # big enough for 1st advertisement which will reset this to 256
         self._advertisement_received = False
 
         self._dcd_saved_at: float = -1
@@ -899,29 +899,34 @@ class BNO08X:
                 while report_index < data_length:
                     report_id = p[report_index]
                     required_bytes = report_length_map(report_id, 0)
+                    
                     if required_bytes == 0: break
-                    scalar, count = scaling_map(report_id, (0, 0))
+                    
+                    if 0x01 <= report_id <= 0x09:                
+                        scalar, count = scaling_map(report_id, (0, 0))
+                        idx = report_index
+                        b2 = p[idx + 2]
+                        # accuracy = b2 & 0x03
+                        ts = packet_base_ms + (((b2 & 0xFC) << 6) | p[idx + 3]) * FP_DIV_TEN
+                        r = p[idx + 4] | (p[idx + 5] << 8)
+                        v1 = (r - ((r & SIGN_BIT) << 1)) * scalar
+                        r = p[idx + 6] | (p[idx + 7] << 8)
+                        v2 = (r - ((r & SIGN_BIT) << 1)) * scalar
+                        r = p[idx + 8] | (p[idx + 9] << 8)
+                        v3 = (r - ((r & SIGN_BIT) << 1)) * scalar
 
-                    idx = report_index
-                    b2 = p[idx + 2]
-                    # accuracy = b2 & 0x03
-                    ts = packet_base_ms + (((b2 & 0xFC) << 6) | p[idx + 3]) * FP_DIV_TEN
-                    r = p[idx + 4] | (p[idx + 5] << 8)
-                    v1 = (r - ((r & SIGN_BIT) << 1)) * scalar
-                    r = p[idx + 6] | (p[idx + 7] << 8)
-                    v2 = (r - ((r & SIGN_BIT) << 1)) * scalar
-                    r = p[idx + 8] | (p[idx + 9] << 8)
-                    v3 = (r - ((r & SIGN_BIT) << 1)) * scalar
+                        if count == 3:
+                            report_values[report_id] = (v1, v2, v3, b2 & 0x03, ts)
+                        else:  # Handle Quaternion V4
+                            r = p[idx + 10] | (p[idx + 11] << 8)
+                            v4 = (r - ((r & SIGN_BIT) << 1)) * scalar
+                            report_values[report_id] = (v1, v2, v3, v4, b2 & 0x03, ts)
 
-                    if count == 3:
-                        report_values[report_id] = (v1, v2, v3, b2 & 0x03, ts)
-                    else:  # Handle Quaternion V4
-                        r = p[idx + 10] | (p[idx + 11] << 8)
-                        v4 = (r - ((r & SIGN_BIT) << 1)) * scalar
-                        report_values[report_id] = (v1, v2, v3, v4, b2 & 0x03, ts)
-
-                    unread_report_count[report_id] += 1
-                    report_index += required_bytes
+                        unread_report_count[report_id] += 1
+                        report_index += required_bytes
+                    else:
+                        self._process_report(report_id, p_mv[report_index : report_index + required_bytes])
+                        report_index += required_bytes
                 continue
 
             # Split payload into multiple reports and process
@@ -1161,7 +1166,7 @@ class BNO08X:
 
         # change timeout to checking flag for ME Calbiration Response 6.4.6.3 SH-2
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
-            self._parse_packets()
+            self.update_sensors()
             if self._me_calibration_started_at > start_time:
                 break
 
@@ -1177,7 +1182,7 @@ class BNO08X:
         self._wake_signal()
         self._send_packet(SHTP_CHAN_CONTROL, local_buffer)
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
-            self._parse_packets()
+            self.update_sensors()
             if self._dcd_saved_at > start_time:
                 return
         raise RuntimeError("Could not save calibration data")

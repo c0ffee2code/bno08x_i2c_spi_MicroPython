@@ -132,7 +132,7 @@ class BNO08X_I2C(BNO08X):
             self._assembly_buffer = bytearray()
             self._target_len = packet_bytes
 
-        # self._max_header_plus_cargo set in advertisement (256), originally set to 284 to cover big advertisement packet
+        # self._max_header_plus_cargo set in advertisement to 256, originally set to 284 to cover big advertisement packet
         fragment_bytes = min(packet_bytes, self._max_header_plus_cargo)
 
         if fragment_bytes > len(self._data_buffer):

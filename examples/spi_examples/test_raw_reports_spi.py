@@ -24,11 +24,12 @@ cs_pin = Pin(17, Pin.OUT, value=1)
 # mosi=Pin(19) - BNO SI (PICO)
 wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 
-spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+spi = SPI(0, baudrate=3000000, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+print(spi) # baudrate=3000000 required
 
 bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin)
-
 print(spi)
+
 print("Start")
 print("====================================\n")
 
@@ -40,7 +41,8 @@ bno.raw_gyro.enable()
 bno.print_report_period()
 
 while True:
-    # Required each loop to refresh sensor data
+    # Update required each loop to check if any sensor updated, print sensor data (some or all may be old data)
+    # see test_reports_full_spi.py, for example of only printing a sensor when it is updated
     bno.update_sensors()
         
     accel_x, accel_y, accel_z, ts_us = bno.raw_acceleration

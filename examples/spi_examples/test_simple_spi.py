@@ -24,19 +24,20 @@ wake_pin = Pin(20, Pin.OUT, value=1)  # BNO WAK
 spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
 
 bno = BNO08X_SPI(spi, cs_pin, reset_pin, int_pin, wake_pin, debug=False)
-
 print(spi)
+
 print("Start")
 print("====================================\n")
 
-bno.acceleration.enable(1000)
-
+bno.acceleration.enable(100)
 bno.print_report_period()
 
 while True:
-    # Required to refresh sensor data
+    # Update required to refresh sensor data
     bno.update_sensors()
 
-    accel_x, accel_y, accel_z = bno.acceleration
-    print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f} m/s²")
-    # Notice Gravity acceleration downwards (~9.8 m/s²)
+    if bno.acceleration.updated:
+        accel_x, accel_y, accel_z = bno.acceleration
+        print(f"Accel  X: {accel_x:+.3f}  Y: {accel_y:+.3f}  Z: {accel_z:+.3f}")
+
+        # Notice Gravity acceleration downwards (~9.8 m/s²)
