@@ -1145,7 +1145,7 @@ class BNO08X:
 
     def calibration_status(self) -> int:
         """
-        Check if fequest for manual calibration accepted by sensor
+        Check if request for manual calibration accepted by sensor
         Wait until calibration ready, Send request for status command, wait for response.
         """
         self._send_me_command(_ME_CALIBRATE_COMMAND, [0, 0, 0, _ME_GET_CAL, 0, 0, 0, 0, 0, ])
@@ -1154,7 +1154,7 @@ class BNO08X:
     def _send_me_command(self, me_type, me_command) -> None:
         self._dbg(f" ME Command {me_type}: {me_command=}")
         start_time = ticks_ms()
-        local_buffer = self._command_buffer
+        send_packet = self._command_buffer
         self._insert_command_request_report(
             me_type,
             self._command_buffer,
@@ -1162,7 +1162,7 @@ class BNO08X:
             me_command,
         )
         self._wake_signal()
-        self._send_packet(SHTP_CHAN_CONTROL, local_buffer)
+        self._send_packet(SHTP_CHAN_CONTROL, send_packet)
 
         # change timeout to checking flag for ME Calbiration Response 6.4.6.3 SH-2
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
@@ -1172,15 +1172,14 @@ class BNO08X:
 
     def save_calibration_data(self) -> None:
         """ Save the self-calibration data uwing DCD save command"""
+        seq = self._tx_sequence_number[SHTP_CHAN_CONTROL]
         start_time = ticks_ms()
-        local_buffer = bytearray(12)
-        self._insert_command_request_report(
-            _SAVE_DCD_COMMAND,
-            local_buffer,
-            self._tx_sequence_number[SHTP_CHAN_CONTROL],
-        )
+        send_packet = bytearray(12)
+        self._insert_command_request_report(_SAVE_DCD_COMMAND, send_packet, seq)
+        
         self._wake_signal()
-        self._send_packet(SHTP_CHAN_CONTROL, local_buffer)
+        self._send_packet(SHTP_CHAN_CONTROL, send_packet)        
+        
         while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
             self.update_sensors()
             if self._dcd_saved_at > start_time:
@@ -1349,13 +1348,27 @@ class BNO08X:
         # Command Response (0xf1) - confirms reset on i2c/spi, ME, and DCD responses
         if report_id == _COMMAND_RESPONSE:
             self._dbg(f"Command response (0xf1)")
-            command = report_bytes[2]
-            # if command < 128:  # command & 0x80 == 0, ** removed to cut code size, info not that helpful
-            #    self._dbg(f" - Response due to Command Request\n")
-            if command & 0x7f == 4:
+            report_body = unpack_from("<BBBBB", report_bytes)
+            response = unpack_from("<BBBBBBBBBBB", report_bytes, 5)
+            (_report_id, _seq_number, command, _command_seq_number, _response_seq_number,) = report_body
+            cal_status, accel_en, gyro_en, mag_en, planar_en, table_en, *_reserved = response
+            
+            if command == 4:
                 self._dbg("Received: Command to Re-Initialze BNO08x\n")
-            return
+            elif command == _ME_CALIBRATE_COMMAND and cal_status == 0:
+                self._me_calibration_started_at = ticks_ms()
+                self._calibration_started = True
+                self._dbg(f"Ready to start calibration at {ticks_ms()=}")
+            elif command == _SAVE_DCD_COMMAND:
+                self._dbg(f"DCD Save calibration sucess. Status is {cal_status}")
+                
+                if cal_status == _COMMAND_STATUS_SUCCESS:
+                    self._dcd_saved_at = ticks_ms()
+                else:
+                    raise RuntimeError(f"Unable to save calibration data, status={cal_status}")
 
+            return
+        
         # Product ID Response (0xf8)
         if report_id == _REPORT_PRODUCT_ID_RESPONSE:
             reset_cause = report_bytes[1]
@@ -1438,24 +1451,6 @@ class BNO08X:
             self._dbg("Command Execution Received on Channel (0x0)")
             return
 
-    def _handle_command_response(self, report_bytes: bytearray) -> None:
-        report_body = unpack_from("<BBBBB", report_bytes)
-        response = unpack_from("<BBBBBBBBBBB", report_bytes, 5)
-        (_report_id, _seq_number, command, _command_seq_number, _response_seq_number,) = report_body
-
-        cal_status, accel_en, gyro_en, mag_en, planar_en, table_en, *_reserved = response
-
-        if command == _ME_CALIBRATE_COMMAND and cal_status == 0:
-            self._me_calibration_started_at = ticks_ms()
-            self._calibration_started = True
-            self._dbg(f"Ready to start calibration at {ticks_ms()=}")
-
-        elif command == _SAVE_DCD_COMMAND:
-            self._dbg(f"DCD Save calibration sucess. Status is {cal_status}")
-            if cal_status == _COMMAND_STATUS_SUCCESS:
-                self._dcd_saved_at = ticks_ms()
-            else:
-                raise RuntimeError(f"Unable to save calibration data, status={cal_status}")
 
     # Enable given feature/sensor report on BNO08x (See SH2 6.5.4)
     def enable_feature(self, feature_id, freq=None):
