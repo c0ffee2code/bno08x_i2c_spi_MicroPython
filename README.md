@@ -308,9 +308,8 @@ The actual sensor period will vary from the attempted period returned by this fu
     period_ms = (1.0 / accelerometer_hertz) * 1000.0
     print(f"Accelerometer: {period_ms:.1f} ms, {accelerometer_hertz:.1f} Hz")
 
-When you request report frequencies at faster than the host can service the sensor the reporting frequency will slow.
-Some sensor reports like Accleration can quickly be served by the BNO08x because it requires few computations.
-The Quaternian requires fusion algorithm which can cause delays.
+When you request report frequencies at faster than the host can read from the sensor, the reporting frequency will slow.
+It is recommended that the requested sensor rate matches your application's needs. In addition, only enable the sensors that you need.
 Try you own experiments and let me know what you find.
 
 | **Hz** | **ms** | **I2C/Quat** | **I2C/Acc** | **SPI/Quat** | **SPI/Acc** |
