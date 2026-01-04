@@ -11,15 +11,15 @@ BNO08x sensor use the non-defaul SPI. This driver reconfigures SPI to those sett
 BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
 
 The BNO08x's SPI protocol has two main transactions:
-1) Host → BNO08x (Write Command): The host initiates the transfer to send a command or data.
-2) Host ← BNO08x (Read Data): The host initiates the transfer to read the BNO08x's data.
+1) Microcontroller → BNO08x (Write Command): The Microcontroller initiates the transfer to send a command or data.
+2) Microcontroller ← BNO08x (Read Data): The Microcontroller initiates the transfer to read the BNO08x's data.
 
-The INT pin is used to tell the host when the BNO08x has data ready (for a Read).
-Requiring an active-low INT signal before the host sends a command (a Write) is overly strict.
-The BNO08x documentation indicates that for a host-to-BNO write, the host is usually free to
+The INT pin is used to tell the Microcontroller when the BNO08x has data ready (for a Read).
+Requiring an active-low INT signal before the Microcontroller sends a command (a Write) is overly strict.
+The BNO08x documentation indicates that for a Microcontroller-to-BNO write, the Microcontroller is usually free to
 initiate the transfer.
 
-TODO: The BNO08x datasheet says the host must respond to H_INTN assertion within ≈10ms
+TODO: The BNO08x datasheet says the Microcontroller must respond to H_INTN assertion within ≈10ms
 to avoid starvation. While the 3.0s timeout prevents lockup, the sleep_ms(10) in
 the loop means the driver will frequently miss the 10ms deadline when polling.
 

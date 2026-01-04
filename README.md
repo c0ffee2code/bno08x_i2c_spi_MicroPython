@@ -1,7 +1,7 @@
 # bno08x-i2c-spi-micropython
-## Micropython I2C SPI Library BNO08X Sensors for 9-axis Fusion
+## Micropython I2C SPI Library BNO08x Sensors for 9-axis Fusion
 
-bno08x MicroPython library for BNO086, BNO085, BNO080 IMUs on I2C, SPI, UART. The BNO08x devices have a variety of sensors that can provide data/results.
+BNO08x MicroPython library for BNO086, BNO085, BNO080 IMUs on I2C, SPI, UART. The BNO08x devices have a variety of sensors that can provide data/results.
 Each sensor is accessed individually and results are called reports.
 
 This library is written to efficiently provide high-frequency updates (short period). In addition, each resport has timestamps with 0.1 msec resolution. 
@@ -9,12 +9,12 @@ Knowing IMU results together with timestamp of results is critical for many tele
 
 This librarty requires that the int_pin and reset_pin be connected to the sensor.
 
-This library has been tested with BNO086 sensor on Raspberry Pico 2 W.
-The report frequency can be limited by the interface chosen. SPI & UART are more efficient than I2C. BNO08x also uses I2C clock stretching which can cause issues.
-I2C Clock Stretching causes IO errors in these cases. SPI and I2C can process 1.0 usec reports at a rate of 1.2 usec.
+This library has been tested with BNO086 sensor on Raspberry Pico 2 W microcontroller.
+The report frequency can be limited by the interface chosen. SPI & UART are more efficient than I2C. 
+BNO08x also uses I2C clock stretching which can cause issues on many microcontrollers
 
 **Credits - Many thanks!**
-- 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X. Copyright (c) 2020 Bryan Siepert for Adafruit Industries. ([GitHub link](https://github.com/adafruit/Adafruit_CircuitPython_BNO08x))
+- 100% inspired by the original Adafruit CircuitPython I2C library for BNO08x. Copyright (c) 2020 Bryan Siepert for Adafruit Industries. ([GitHub link](https://github.com/adafruit/Adafruit_CircuitPython_BNO08x))
 - This code was also inspired by feature and fixes written by dobodu ([GitHub link](https://github.com/dobodu/BOSCH-BNO085-I2C-micropython-library))
 - ...thanks in advance for any pull request contributions.
 
@@ -43,7 +43,7 @@ Optional parameters:
 
     bno = BNO08X_I2C(i2c0, address=0x4b, int_pin=int_pin, reset_pin=reset_pin, debug=True)
 
-The maximum clock frequency for i2c is 400_000 (~400kbs). PS0 (wake_pin) and PS1 are used to select I2C.
+The maximum clock frequency for I2C is 400_000 (~400kbs). PS0 (wake_pin) and PS1 are used to select I2C.
 To use I2C, both PS0 and PS1 can not have solder blobs which means both are tied to ground. I2C can not use wake_pin.
 
 ## Enable the Sensor Reports
@@ -84,7 +84,7 @@ Beyond the sensor data, each update also has metadata with the timestamp of the 
 The sensor data and metadata for each report can be accessed at the same time using the modifier ".full".
 In this way, the accuracy and the microsecond-accurate timestamp of a particular report is returned at the same time.
 The timestamp_ms is milliseconds since sensor startup. 
-You can calculate the millisecond difference between ticks_ms() and the bno08x start time by using bno.bno_start_diff.
+You can calculate the millisecond difference between ticks_ms() and the BNO08x start time by using bno.bno_start_diff.
 Understanding timestamps is recommended for high-frequency applications (>5Hz).
 
     bno.update_sensors()
@@ -158,7 +158,7 @@ We also supply the following conversion helper function:
 ## Option to Change Sensor Report Frequency
 
 The default sensor update frequencies are 10 to 20 Hz.
-You can request different frequecies and the BNO08X will pick the closest frequency it can provide. See (_Details on Report Frequencies_) for more details.
+You can request different frequecies and the BNO08x will pick the closest frequency it can provide. See (_Details on Report Frequencies_) for more details.
 
     bno.acceleration.enable(40)  # enable accelerometer reports at 40 Hertz (can also use 40.0)
 
@@ -196,8 +196,8 @@ Most computer games use this implementation for smooth and predictable graphics.
 
 Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stretching_** on I2C.
 This causes a variety of issues including report errors and the need to restart/reset the sensor if the microcontroller has not responded quickly enough.
-This library has been optimized for efficiency and is likely to avoid clock stretching.
-Clock stretching interferes with various chips (ex: RP2) in different ways (BNO08X Datasheet 1000-3927 v1.17, page 15).
+This library has been optimized for efficiency and should minimize clock stretching.
+Clock stretching interferes with various microcontrollers (ex: RP2) in different ways (BNO08x Datasheet 1000-3927 v1.17, page 15).
 
 ## SPI Setup - High Speed & Stable (No Clock-Stretch Issues)
 
@@ -206,7 +206,7 @@ SPI should be set to baudrate=3000000.
 In order to use SPI on most sensor boards you must add ONE solder blob on PS1. 
 On the back side of Sparkfun BNO086 and Adafruit BNO085, you need a solder blob to bridge PS1 which will set PS1 high for SPI operation. 
 The PS0 (Wake_pin) must be connected to a gpio (wake_pin), please be careful not put a solder blog on PS0.
-This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08X out of sleep for communication with the BNO08X.
+This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08x out of sleep for communication with the BNO08X.
 On the Sparkfun BNO086 when using SPI, you must clear I2C jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
 
     from bno08x import *
@@ -231,13 +231,13 @@ Required for SPI:
 Optional for SPI:
 - debug : prints very detailed logs, primarily for driver debug & development.
 
-This driver will reset the SPI to have polarity=1 and phase=1 as required by the bno08x.
+This driver will reset the SPI to have polarity=1 and phase=1 as required by the BNO08x.
 
 ## UART Setup
 
  UART must be set to baudrate=3_000_000 (only).
 
-PS0 and PS1 are the host interface protocol selection pins, therefore UART can not use a wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground. 
+PS0 and PS1 are the BNO08x interface protocol selection pins, therefore UART can not use a wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground. 
 Must clear I2C jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
 
     from bno08x import *
@@ -298,7 +298,7 @@ The actual sensor period will vary from the attempted period returned by this fu
     period_ms = (1.0 / accelerometer_hertz) * 1000.0
     print(f"Accelerometer: {period_ms:.1f} ms, {accelerometer_hertz:.1f} Hz")
 
-When you request report frequencies at faster than the host can read from the sensor, the reporting frequency will slow.
+When you request report frequencies at faster than the Microcontroller can read from the sensor, the reporting frequency will slow.
 It is recommended that the requested sensor rate matches your application's needs. In addition, only enable the sensors that you need.
 Try you own experiments and let me know what you find.
 
@@ -316,7 +316,7 @@ Refer to the BNO080_085-Datasheet.pdf (page 50) for maximum sensor report rates 
 
 ## Basic User Sensor Calibration Procedure - Dynamic Calibration
 
-It is recommended to calibrate the BNO08X. Each sensor is calibrated individually.
+It is recommended to calibrate the BNO08x. Each sensor is calibrated individually.
 The basic calibarationsteps are provided below if a user wants to force a calibration.
 the basic Sensor Calibration Procedure:
 - Accelerometer
@@ -331,7 +331,7 @@ Background:
 In the BNO08x datasheet see Figure 3-2 summarizes the steps required to calibrate the accelerometer, gyroscope and magnetometer.
 Note that in normal use the device will be exposed to conditions that will allow calibration to
 occur with no explicit user input.
-For more details on the procedure to calibrate the BNO08X, refer to the BNO08X Sensor Calibration Procedure
+For more details on the procedure to calibrate the BNO08x, refer to the BNO08x Sensor Calibration Procedure
 application note.
 - https://cdn.sparkfun.com/assets/9/e/1/d/9/Sensor-Calibration-Procedure-v1.1.pdf
 
@@ -346,12 +346,12 @@ calibaration, Kalman filters, etc.). Starting background on Fusion algorithms: h
 
 Please read the references below before attempting to use raw reports. The raw sensors timestamps are not well-documented in Ceva documentation.
 
-In addition, there are other sensor reports possible with the bno08x sensors that this driver has not fully
+In addition, there are other sensor reports possible with the BNO08x sensors that this driver has not fully
 implemented. See code source for details. 
 
 ## UART-RVC is NOT SUPPORTED by this driver (RVC, Robot Vacuum Cleaners)
 
-The BNO08X has a simplified UART-RVC interface for use on unmanned ground roving robot and robot vacuum cleaners (RVC).
+The BNO08x has a simplified UART-RVC interface for use on unmanned ground roving robot and robot vacuum cleaners (RVC).
 This is a very different protocol and not supported in my driver. Take a look at: https://github.com/rdagger/micropython-bno08x-rvc
 
 ## References
