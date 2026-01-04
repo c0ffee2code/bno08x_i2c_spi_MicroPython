@@ -6,6 +6,20 @@
 #
 """
 I2C Class that requires BNO08X base Class
+
+BNO08x sensors use non-standard I2C clock stretching which can cause problems for various microcontrollers.
+
+The INT pin is used to tell the microcontroller when the BNO08x has data ready to read.
+The BNO08x datasheet says the host must respond to H_INTN assertion within ≈10ms to avoid starvation and clock stretching.
+
+Using I2C, a wait signal is a noop (pass), to make SPI easier to implement.
+
+Using multiple sensors on I2C - untested with this driver
+* Each BNO08x needs its own Interrupt (int_pin) to each BNO Int pins
+* they can share the Reset (reset_pin), a reset on one resets all sensors
+* they can share the two I2C signals (SDA, SCL)
+* must make sure have different Addresses and this is set up in the user code
+* ASLO typically requires solder blogs on sensor boards to select (0x4b, 0x4a).
 """
 
 from struct import pack
@@ -122,7 +136,7 @@ class BNO08X_I2C(BNO08X):
 
         raw_packet_bytes = (h[1] << 8) | h[0]
         if raw_packet_bytes == 0:
-            return None # Must check for None (non-tuple) first then can unpack tuple
+            return None  # Must check for None (non-tuple) first then can unpack tuple
         if raw_packet_bytes == 0xFFFF:
             raise OSError("FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
