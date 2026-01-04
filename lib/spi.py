@@ -138,68 +138,56 @@ class BNO08X_SPI(BNO08X):
     @micropython.native
     def _read_packet(self, wait=False):
         if self._int_pin.value() != 0:
-            if not wait:
+            if not wait or not self._wait_for_int(timeout_us=50000):
                 return None
-            if not self._wait_for_int(timeout_us=50000):
-                return None
-        
-        # Local references to avoid repeated attribute lookups
+
         spi = self._spi
-        cs_pin  = self._cs_pin
+        cs = self._cs_pin
         h_mv = self._header_mv
         h = self._header
 
-        # SPI Header read
-        cs_pin.value(0)
+        # Read Header 
         sleep_us(1)
-        spi.readinto(h_mv, 0x00) # CS is still 0, must set to 1 after payload read, or if error
+        spi.readinto(h_mv, 0x00) # CS held low
 
-        raw_packet_bytes = (h[1] << 8) | h[0]
-        if raw_packet_bytes == 0:  # fast return if 0 payload
-            cs_pin.value(1)
-            return None # NOTE: not a tuple! must check for None first, only if data then unpack tuple
+        raw_len = (h[1] << 8) | h[0]
+        if raw_len == 0 or raw_len == 0xFFFF:
+            cs.value(1)
+            return None
 
-#         if raw_packet_bytes == 0xFFFF:  # this shows bad sensor
-#             self._cs_pin.value(1)
-#             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
+        is_continuation = bool(raw_len & 0x8000)
+        packet_bytes = raw_len & 0x7FFF
+        
+        # Fresh packet clear assembly buffer
+        if not is_continuation:
+            self._assembly_buffer = bytearray()
+            self._target_len = packet_bytes
 
-        payload_bytes = (raw_packet_bytes & 0x7FFF) - 4
-
+        payload_bytes = packet_bytes - 4
+        
         if payload_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(payload_bytes)
 
-        # self._max_header_plus_cargo set in advertisement to 256, originally set to 284 to cover big advertisement packet
-        if payload_bytes <= self._max_header_plus_cargo:
-            # SPI only Payload read, because CS was not de-asserted BNO08x will not resend header
-            mv = memoryview(self._data_buffer)[:payload_bytes]
-            spi.readinto(mv, 0x00)
-            cs_pin.value(1)
+        mv_payload = memoryview(self._data_buffer)[:payload_bytes]
+        spi.readinto(mv_payload, 0x00)
+        cs.value(1)
 
-        else:
-            print(
-                f"FRAGMENTED PACKET spi.py: {hex(raw_packet_bytes)=} {packet_bytes=} > {_SHTP_MAX_CARGO_PACKET_BYTES}(max cargo)")
-            print(f"FRAGMENTED PACKET spi.py: {self._header=}")
-            print(f"***** NEED to implement multi-packet reads, erasing header")
-            print(f"* Have yet to see packet_bytes > 193 bytes, algorithm sketched out")
-            print(f"* Ceva and others have no clear documentation of the max cargo bytes value")
-            print(f" _read_packet Header {hex(raw_packet_bytes)=}, {channel=}, {seq=}")
-            print(f"{self._data_buffer[0:16]}")
-            raise NotImplementedError("Continuation Packets after Packets are NOT implemented. TODO")
-
-            # at startup some first packets have continuation, likely missed the packet before
-            # when the payload bytes are longer than the xxxxx then we must processess the next packet
-            # this should have continuation bit set
-            continuation = bool(raw_packet_bytes & 0x8000)
-            if continuation:
-                self._dbg(f"CONTINUATION in _read_packet: {packet_bytes=}")
-                # raise PacketError("read partial packet")
+        # Append to assembly, skip aleady read header
+        self._assembly_buffer.extend(mv_payload)
 
         channel = h[2]
         seq = h[3]
-        self._rx_sequence_number[channel] = seq  # report sequence number
+        self._rx_sequence_number[channel] = seq
 
-        # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False, if self._debug also helps
-        if self._debug:
-            self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
+        # read next fragment if needed, it should havve continuation bit set
+        if len(self._assembly_buffer) + 4 < self._target_len:
+            if self._wait_for_int(timeout_us=10000):
+                return self._read_packet(wait=True)
+
+        payload_bytes = len(self._assembly_buffer)
+        mv = memoryview(self._assembly_buffer)[:payload_bytes]
+
+#         if self._debug:
+#             self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
 
         return mv, channel, payload_bytes
