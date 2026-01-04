@@ -201,13 +201,13 @@ Clock stretching interferes with various chips (ex: RP2) in different ways (BNO0
 
 ## SPI Setup - High Speed & Stable (No Clock-Stretch Issues)
 
+SPI should be set to baudrate=3000000.
+
 In order to use SPI on most sensor boards you must add ONE solder blob on PS1. 
 On the back side of Sparkfun BNO086 and Adafruit BNO085, you need a solder blob to bridge PS1 which will set PS1 high for SPI operation. 
 The PS0 (Wake_pin) must be connected to a gpio (wake_pin), please be careful not put a solder blog on PS0.
 This driver uses the wake-pin after reset as a ‘wake’ signal taking the BNO08X out of sleep for communication with the BNO08X.
 On the Sparkfun BNO086 when using SPI, you must clear I2C jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
-
-SPI should be set to baudrate=3000000.
 
     from bno08x import *
     from i2c import BNO08X_I2C
@@ -237,6 +237,9 @@ This driver will reset the SPI to have polarity=1 and phase=1 as required by the
 
  UART must be set to baudrate=3_000_000 (only).
 
+PS0 and PS1 are the host interface protocol selection pins, therefore UART can not use a wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground. 
+Must clear I2C jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
+
     from bno08x import *
     from i2c import BNO08X_I2C
     from machine import I2C, Pin
@@ -254,11 +257,6 @@ uart = UART(0, baudrate=3000000, tx=Pin(12), rx=Pin(13), timeout=2000)
 Required for UART:
 - int_pin : required by UART for accurate sensor timestamps. Define a Pin object, not number.
 - reset_pin : used by UART for hardware reset, if not defined uses soft reset. It is a Pin object, not number
-
-PS0 and PS1 are the host interface protocol selection pins, therefore UART can not use a wake pin.  In order to use UART, PS1 must be high (solder blob) and PS0/WAKE not have solder blob so it is tied to ground.
-
-1. must clear I2C jumper when using SPI or UART (https://docs.sparkfun.com/SparkFun_VR_IMU_Breakout_BNO086_QWIIC/assets/board_files/SparkFun_VR_IMU_Breakout_BNO086_QWIIC_Schematic_v10.pdf)
-2. must have solder blob ONLY on SP1, must NOT have Wake pin connect to a pin.
 
 ## Details on Report Frequencies
 
@@ -314,7 +312,7 @@ Try you own experiments and let me know what you find.
 | 125    | 8.0    | -            | 7.9         | -            | 8.0         |
 | 100    | 10.0   | 10.0         | -           | 10.0         | -           |
 
-Refer to the BNO080_085-Datasheet.pdf (page 50) for Maximum sensor report rates by report type.
+Refer to the BNO080_085-Datasheet.pdf (page 50) for maximum sensor report rates by report type.
 
 ## Basic User Sensor Calibration Procedure - Dynamic Calibration
 
@@ -330,7 +328,7 @@ the basic Sensor Calibration Procedure:
 - - Sensor should be rotated about 180° and back to the beginning position in each axis (roll, pitch, yaw). In roughly 2 seconds.
 
 Background:
-In the BNO08x datasheet see figure 3-2 summarizes the steps required to calibrate the accelerometer, gyroscope and magnetometer.
+In the BNO08x datasheet see Figure 3-2 summarizes the steps required to calibrate the accelerometer, gyroscope and magnetometer.
 Note that in normal use the device will be exposed to conditions that will allow calibration to
 occur with no explicit user input.
 For more details on the procedure to calibrate the BNO08X, refer to the BNO08X Sensor Calibration Procedure
