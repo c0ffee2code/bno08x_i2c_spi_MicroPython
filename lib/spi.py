@@ -11,15 +11,15 @@ BNO08x sensor use the non-defaul SPI. This driver reconfigures SPI to those sett
 BNO08X Datasheet (1.2.4.2 SPI) requires CPOL = 1 and CPHA = 1, which is: polarity=1 and phase=1
 
 The BNO08x's SPI protocol has two main transactions:
-1) Microcontroller → BNO08x (Write Command): The Microcontroller initiates the transfer to send a command or data.
-2) Microcontroller ← BNO08x (Read Data): The Microcontroller initiates the transfer to read the BNO08x's data.
+1) Host → BNO08x (Write Command): The host initiates the transfer to send a command or data.
+2) Host ← BNO08x (Read Data): The host initiates the transfer to read the BNO08x's data.
 
-The INT pin is used to tell the Microcontroller when the BNO08x has data ready (for a Read).
-Requiring an active-low INT signal before the Microcontroller sends a command (a Write) is overly strict.
-The BNO08x documentation indicates that for a Microcontroller-to-BNO write, the Microcontroller is usually free to
+The INT pin is used to tell the host when the BNO08x has data ready (for a Read).
+Requiring an active-low INT signal before the host sends a command (a Write) is overly strict.
+The BNO08x documentation indicates that for a host-to-BNO write, the host is usually free to
 initiate the transfer.
 
-TODO: The BNO08x datasheet says the Microcontroller must respond to H_INTN assertion within ≈10ms
+TODO: The BNO08x datasheet says the host must respond to H_INTN assertion within ≈10ms
 to avoid starvation. While the 3.0s timeout prevents lockup, the sleep_ms(10) in
 the loop means the driver will frequently miss the 10ms deadline when polling.
 
@@ -127,12 +127,11 @@ class BNO08X_SPI(BNO08X):
             self._dbg(f"  Sending Packet *************{self._packet_decode(write_length, channel, seq, data)}")
 
         self._cs_pin.value(0)
-        sleep_us(1)
+        sleep_us(1) # BNO08x Figure 6-6: SPI timing, needs > 31ns
         self._spi.write(send_packet)
         self._cs_pin.value(1)
 
         self._tx_sequence_number[channel] = (seq + 1) & 0xFF
-        sleep_ms(10)
         return
 
     @micropython.native
@@ -149,46 +148,51 @@ class BNO08X_SPI(BNO08X):
         # Read Header 
         cs.value(0)
         sleep_us(1)
-        spi.readinto(h_mv, 0x00) # CS held low
+        spi.readinto(h_mv, 0x00) # CS held low, so only read payload below
 
-        raw_len = (h[1] << 8) | h[0]
-        if raw_len == 0 or raw_len == 0xFFFF:
+        raw_packet_bytes = (h[1] << 8) | h[0]
+        if raw_packet_bytes == 0:
             cs.value(1)
-            return None
+            return None # Must check for None (non-tuple) first then can unpack tuple
+        if raw_packet_bytes == 0xFFFF:
+            cs.value(1)
+            raise OSError("FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
-        is_continuation = bool(raw_len & 0x8000)
-        packet_bytes = raw_len & 0x7FFF
+        packet_bytes = raw_packet_bytes & 0x7FFF
         
-        # Fresh packet clear assembly buffer
+        # if fresh packet, clear previous assembly buffer, first header shows multi-packet lenght
+        is_continuation = bool(raw_packet_bytes & 0x8000)
         if not is_continuation:
             self._assembly_buffer = bytearray()
             self._target_len = packet_bytes
 
-        payload_bytes = packet_bytes - 4
+        # advertisement sets self._max_header_plus_cargo=256, originally set to 284 to cover big advertisement packet
+        fragment_bytes = min(packet_bytes, self._max_header_plus_cargo)
         
-        if payload_bytes > len(self._data_buffer):
-            self._data_buffer = bytearray(payload_bytes)
+        # SPI with CS still low, we only read payload
+        fragment_bytes = fragment_bytes - 4
+        if fragment_bytes > len(self._data_buffer):
+            self._data_buffer = bytearray(fragment_bytes)
 
-        mv_payload = memoryview(self._data_buffer)[:payload_bytes]
-        spi.readinto(mv_payload, 0x00)
+        fragment_mv = memoryview(self._data_buffer)[:fragment_bytes]
+        spi.readinto(fragment_mv, 0x00)
         cs.value(1)
-
-        # Append to assembly, skip aleady read header
-        self._assembly_buffer.extend(mv_payload)
+        self._assembly_buffer.extend(fragment_mv)  # Append cargo only, skip fragment header
 
         channel = h[2]
         seq = h[3]
         self._rx_sequence_number[channel] = seq
 
-        # read next fragment if needed, it should havve continuation bit set
+        # check if we need to read more packets to complete 1st fragment
         if len(self._assembly_buffer) + 4 < self._target_len:
             if self._wait_for_int(timeout_us=10000):
-                return self._read_packet(wait=True)
+                return self._read_packet(wait=True)  # next header will have continuation bit set
 
         payload_bytes = len(self._assembly_buffer)
         mv = memoryview(self._assembly_buffer)[:payload_bytes]
 
-#         if self._debug:
-#             self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
+        # * comment out self._dbg for normal operation, self._dbg very slow if uncommented even if debug=False
+        # if self._debug:
+        #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
 
         return mv, channel, payload_bytes

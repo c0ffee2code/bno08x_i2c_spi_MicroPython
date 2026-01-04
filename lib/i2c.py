@@ -117,24 +117,25 @@ class BNO08X_I2C(BNO08X):
         h_mv = self._header_mv
         h = self._header
 
-        # Initial 4-byte header
-        i2c.readfrom_into(i2c_addr, h_mv)
+        # 4-byte header
+        i2c.readfrom_into(i2c_addr, h_mv)  # BNO08x will re-send header+payload in next read
 
         raw_packet_bytes = (h[1] << 8) | h[0]
-        if raw_packet_bytes == 0 or raw_packet_bytes == 0xFFFF:
-            return None
+        if raw_packet_bytes == 0:
+            return None # Must check for None (non-tuple) first then can unpack tuple
+        if raw_packet_bytes == 0xFFFF:
+            raise OSError("FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
-        is_continuation = bool(raw_packet_bytes & 0x8000)
         packet_bytes = raw_packet_bytes & 0x7FFF
 
         # if fresh packet, clear previous assembly buffer
+        is_continuation = bool(raw_packet_bytes & 0x8000)
         if not is_continuation:
             self._assembly_buffer = bytearray()
             self._target_len = packet_bytes
 
-        # self._max_header_plus_cargo set in advertisement to 256, originally set to 284 to cover big advertisement packet
+        # advertisement sets self._max_header_plus_cargo=256, originally set to 284 to cover big advertisement packet
         fragment_bytes = min(packet_bytes, self._max_header_plus_cargo)
-
         if fragment_bytes > len(self._data_buffer):
             self._data_buffer = bytearray(fragment_bytes)
 
@@ -146,6 +147,7 @@ class BNO08X_I2C(BNO08X):
         seq = h[3]
         self._rx_sequence_number[channel] = seq
 
+        # check if we need to read more packets to complete 1st fragment
         if len(self._assembly_buffer) + 4 < self._target_len:
             if self._wait_for_int(timeout_us=10000):
                 return self._read_packet(wait=True)  # next header will have continuation bit set
@@ -153,7 +155,7 @@ class BNO08X_I2C(BNO08X):
         payload_bytes = len(self._assembly_buffer)
         mv = memoryview(self._assembly_buffer)[:payload_bytes]
 
-        # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False, if self._debug also helps
+        # * comment out self._dbg for normal operation, self._dbg very slow if uncommented even if debug=False
         # if self._debug:
         #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
 
