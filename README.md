@@ -1,19 +1,17 @@
 # bno08x-i2c-spi-micropython
 ## Micropython I2C SPI Library BNO08X Sensors for 9-axis Fusion
 
-bno08x MicroPython driver for I2C, SPI, UART on MicroPython. This is for the BNO086, BNO085, and BNO080 IMU sensors. The BNO08x sensors have a variety of sensors that can provide data/results.
-Each of these are accessed individually and called reports. An update_sensors must be called before sensors are read.
+bno08x MicroPython library for BNO086, BNO085, BNO080 IMUs on I2C, SPI, UART. The BNO08x devices have a variety of sensors that can provide data/results.
+Each sensor is accessed individually and results are called reports.
 
-This driver is written to provide to respond to high-frequency reports (short period), and also provides 0.1 msec resolution 
-timestamps with each sensor report. Knowing IMU results together with timestamp of results is critical for many
-telemetry applications.  
+This library is written to efficiently provide high-frequency updates (short period). In addition, each resport has timestamps with 0.1 msec resolution. 
+Knowing IMU results together with timestamp of results is critical for many telemetry applications.  
 
-This driver requires that the int_pin and reset_pin be connected to the sensor.
+This librarty requires that the int_pin and reset_pin be connected to the sensor.
 
 This library has been tested with BNO086 sensor on Raspberry Pico 2 W.
-The report frequency can be limited by the interface chosen. SPI is the fastest, but more importantly, SPI avoids the bno08x's non-standard I2C clock stretching that the BNO08x sensors perform.
+The report frequency can be limited by the interface chosen. SPI & UART are more efficient than I2C. BNO08x also uses I2C clock stretching which can cause issues.
 I2C Clock Stretching causes IO errors in these cases. SPI and I2C can process 1.0 usec reports at a rate of 1.2 usec.
-UART can process 1.0 usec reports at a rate of 1.5 usec.
 
 **Credits - Many thanks!**
 - 100% inspired by the original Adafruit CircuitPython I2C library for BNO08X. Copyright (c) 2020 Bryan Siepert for Adafruit Industries. ([GitHub link](https://github.com/adafruit/Adafruit_CircuitPython_BNO08x))
@@ -205,7 +203,9 @@ Unfortunately, the BNO080, BNO085, and BNO086 all use **_non-standard clock stre
 This causes a variety of issues including report errors and the need to restart/reset the sensor.
 Clock stretching interferes with various chips (ex: RP2) in different ways.
 If you see ETIMEDOUT, this is likely the issue (BNO08X Datasheet 1000-3927 v1.17, page 15).
-Some have had good results with software I2C (emulation). We do not know how this impacts performance.
+Some have had good results with software I2C (emulation). We do not know how much this impacts performance.
+
+The good news is that this library has been optimized for efficiency. The faster the host reads the sensor the less likely that the BNO08x will start to clock stretch.
 
 ## SPI Setup - High Speed & Stable (No Clock-Stretch Issues)
 
