@@ -157,12 +157,12 @@ We also supply the following conversion helper function:
 
 ## Option to Change Sensor Report Frequency
 
-The sensor report default frequencies are 10 to 20 Hz.
+The default sensor update frequencies are 10 to 20 Hz.
 You can request different frequecies and the BNO08X will pick the closest frequency it can provide.
 
     bno.acceleration.enable(40)  # enable accelerometer reports at 40 Hertz (can also use 40.0)
 
-See the seletion below (_Details on Report Frequencies_) for more details.
+See the seletion below on (_Details on Report Frequencies_) for more details.
 If your code requests reports faster than the report feature frequency specified, repeated values will be returned.
 
 ## Sensor reports - next iteration
