@@ -254,12 +254,8 @@ _REPORTS_DICTIONARY = {
 }
 
 _DEFAULT_REPORT_INTERVAL = const(50_000)  # 50,000us = 50ms, 20 MHz
-_QUAT_READ_TIMEOUT = 0.5  # timeout in seconds
-_PACKET_READ_TIMEOUT = 2.0  # timeout in seconds
-_FEATURE_ENABLE_TIMEOUT = 2.0  # timeout in seconds
-_DEFAULT_TIMEOUT = 2.0  # timeout in seconds
-_CALIBRATION_TIMEOUT = 5.0  # 10 sec
-_TIMEOUT_SHORT_MS = 100  # short sensor knows ME status, just needs to package and send (few ms)
+_FEATURE_ENABLE_TIMEOUT_MS = 2000  # 2.0 second timeout for Enable Features
+_ME_DCD_TIMEOUT_MS = 2000  # 2.0 second timeout for ME and DCD
 
 _MAX_PACKET_PROCESS = 10
 
@@ -452,7 +448,7 @@ _INITIAL_REPORTS = {
 ACTIVITIES = ["Unknown", "In-Vehicle", "On-Bicycle", "On-Foot", "Still", "Tilting", "Walking", "Running", "OnStairs", ]
 _ENABLED_ACTIVITIES = 0x1FF  # Enable 9  activities: 1 bit set for each of 8 activities and 1 Unknown
 
-DATA_BUFFER_SIZE = const(512)  # data buffer size. obviously eats ram
+DATA_BUFFER_SIZE = const(284)  # big enough for 1st advertisement 4+280 payload, then max packet <= 256
 PacketHeader = namedtuple(
     "PacketHeader",
     ["packet_byte_count", "channel_number", "sequence_number", "report_id_number", ],
@@ -464,12 +460,6 @@ REPORT_ACCURACY_STATUS = [
     "Medium Accuracy",
     "High Accuracy",
 ]
-
-
-# Elapsed seconds, pass in tick_ms
-def _elapsed_sec(ticks_start):
-    """ Elapsed time between now - ticks_start. Returns float in seconds """
-    return ticks_diff(ticks_ms(), ticks_start) / 1000.0
 
 
 ############ Sensor Methods ###########################
@@ -716,6 +706,7 @@ class BNO08X:
         self._int_pin.irq(trigger=Pin.IRQ_FALLING, handler=self._first_interrupt)
 
         self._dbg(f"********** __init__ on {self._interface} Interface *************\n")
+        self._max_header_plus_cargo = DATA_BUFFER_SIZE  # big enough for 1st advertisement which will reset this to 256
         self._data_buffer: bytearray = bytearray(DATA_BUFFER_SIZE)
         self._data_buffer_memoryview = memoryview(self._data_buffer)
         self._command_buffer: bytearray = bytearray(12)
@@ -729,7 +720,6 @@ class BNO08X:
         # track RX(inbound) and TX(outbound) sequence numbers one per channel, one per direction
         self._rx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
         self._tx_sequence_number: list[int] = [0, 0, 0, 0, 0, 0]
-        self._max_header_plus_cargo = 284  # big enough for 1st advertisement which will reset this to 256
         self._advertisement_received = False
 
         self._dcd_saved_at: float = -1
@@ -1165,7 +1155,7 @@ class BNO08X:
         self._send_packet(SHTP_CHAN_CONTROL, send_packet)
 
         # change timeout to checking flag for ME Calbiration Response 6.4.6.3 SH-2
-        while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
+        while ticks_diff(ticks_ms(), start_time) < _ME_DCD_TIMEOUT_MS:
             self.update_sensors()
             if self._me_calibration_started_at > start_time:
                 break
@@ -1180,7 +1170,7 @@ class BNO08X:
         self._wake_signal()
         self._send_packet(SHTP_CHAN_CONTROL, send_packet)        
         
-        while _elapsed_sec(start_time) < _DEFAULT_TIMEOUT:
+        while ticks_diff(ticks_ms(), start_time) < _ME_DCD_TIMEOUT_MS:
             self.update_sensors()
             if self._dcd_saved_at > start_time:
                 return
@@ -1495,12 +1485,9 @@ class BNO08X:
             del self._report_periods_dictionary_us[feature_id]
 
         start_time = ticks_ms()
-        timeout_ms = _FEATURE_ENABLE_TIMEOUT * 1000
-
         while feature_id not in self._report_periods_dictionary_us:
             self.update_sensors()
-
-            if ticks_diff(ticks_ms(), start_time) > timeout_ms:
+            if ticks_diff(ticks_ms(), start_time) > _FEATURE_ENABLE_TIMEOUT_MS:
                 raise RuntimeError(f"BNO08X: Timeout enabling feature: {hex(feature_id)}")
 
         actual_interval = self._report_periods_dictionary_us[feature_id]
