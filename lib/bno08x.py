@@ -56,10 +56,15 @@ but i2c & spi must also reread header, 1.1739 penalty (27/23) for quaternion
  - SPI is 6.9x faster than I2C.  (622.077/73.737 = 8.436)
  - UART is 8.1x faster than I2C.  (622.0773/76.666 = 8.114)
 
-Current best sensor update periods - BNO086 responded with 1 ms update frequeny:
+Current best sensor update periods for 3-tuple acceleration:
 - spi:   2.0ms (500 Hz) with acc at 2.0ms (500 Hz)
 - uart:  2.0ms (500 Hz) with acc at 2.0ms (500 Hz)
-- i2c:   ?ms (? Hz) with ? ms report frequency
+- i2c:   2.0ms (500 Hz) with acc at 2.0ms (500 Hz)
+Current best sensor update periods for 4-tuple Quaternion:
+- spi:   2.5ms (400 Hz) with quaternion at 2.5ms request (400 Hz)
+- uart:  2.55ms (393 Hz) with quaternion at 2.5ms request (400 Hz)
+- i2c:   2.9ms (344 Hz) with quaternion at 2.5ms request (400 Hz)
+
 At report frequencies shorter than above, the period will increase, likey because the host isn't
 keeping up with the sensor and the sensor packages multiple packets together and this library only
 returns data for the latest of each package of reports.
@@ -74,7 +79,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "0.9.8"
+__version__ = "1.0.0"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
