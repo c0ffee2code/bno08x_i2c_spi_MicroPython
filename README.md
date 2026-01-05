@@ -68,7 +68,8 @@ Primary sensor report constants:
 
 ## Getting the Sensor Results:
 
-Sensors values can be read after you perform a bno.update_sensors:
+Sensors values can be read after you perform a bno.update_sensors. 
+AVOID sleep() in your loops, because senssors must be read quickly after updates. See example codes for better strategies.
 
     bno.update_sensors()
     accel_x, accel_y, accel_z = bno.acceleration
