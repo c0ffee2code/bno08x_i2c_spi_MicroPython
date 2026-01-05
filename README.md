@@ -337,9 +337,11 @@ application note.
 
 ## Sample use of library - output results to Vpython to show sensor orientation
 
-I created a VPython code that runs on a mac that reads data created on a Raspberry Pi Pico 2 W and a BNO086 sensor.
-That code can be found here:
+I created a VPython code that runs on a Mac that reads data created on a Raspberry Pi Pico 2 W and a BNO086 sensor.
+That code can be found here for Mac and RP Pico 2W that uses this library.
 https://github.com/bradcar/vpython_imu_tracker
+
+![Output1](imgs/vpython-imu-tracker-1.png)
 
 ## Raw Reports - Be Careful!
     BNO_REPORT_RAW_ACCELEROMETER
