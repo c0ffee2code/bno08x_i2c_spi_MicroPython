@@ -41,7 +41,6 @@ In UART mode, the BNO08X sends an advertisement message when it is ready to comm
 from struct import pack
 
 import micropython
-import uctypes
 from machine import Pin
 from utime import sleep_ms, sleep_us, ticks_ms, ticks_us, ticks_diff
 
@@ -73,6 +72,8 @@ class BNO08X_UART(BNO08X):
         self._header = bytearray(4)  # efficient spi handling of header read
         self._header_mv = memoryview(self._header)
         self._byte_buf = bytearray(1)  # efficient spi handling of header read
+        self._assembly_buffer = bytearray() # TODO FUTURE for multi-packet handing
+        self._target_len = 0
 
         # wake_pin must be NONE!  wake_pin/PS0 = 0 (gnd)
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)
@@ -143,7 +144,7 @@ class BNO08X_UART(BNO08X):
         pass
 
     def _send_packet(self, channel, data):
-        """ 1.2.3.1 UART Operation:"Bytes sent to the BNO08X must be separated by at least 100us."""
+        """ 1.2.3.1 UART Operation: Bytes sent to the BNO08X must be separated by at least 100us."""
         seq = self._tx_sequence_number[channel]
         self._dbg(f"DEBUG: Sending on Chan {channel} with TX Seq {seq}")
         data_length = len(data)
@@ -199,9 +200,92 @@ class BNO08X_UART(BNO08X):
             buf[idx] = b
             idx += 1
 
+#     def _read_packet(self, wait=None):
+#         if not self._new_data_interrupt and self._uart.any() < 1:
+#             return None
+#         
+#         # Local references to avoid repeated attribute lookups
+#         uart = self._uart
+#         byte_buf = self._byte_buf
+#         h = self._header
+# 
+#         # UART Header read - handle SHTP protocol, read until see 0x7E start byte
+#         start_time_read = ticks_ms()
+#         while True:
+#             if uart.readinto(byte_buf, 1) == 0:
+#                 if ticks_diff(ticks_ms(), start_time_read) > 100:
+#                     return None
+#                 continue
+#             if byte_buf[0] == 0x7E:
+#                 break
+# 
+#         # Skip any additional 0x7E bytes
+#         while True:
+#             if uart.readinto(byte_buf, 1) == 0:
+#                 return None
+#             if byte_buf[0] != 0x7E:
+#                 break
+# 
+#         # Check the SHTP Protocol ID (0x01), self._byte_buf[0] has first byte after the 0x7E sequence
+#         if byte_buf[0] != 0x01:
+#             return None
+# 
+#         # Read header bytes with self._read_into
+#         self._read_into(self._header_mv, start=0, end=4)
+# 
+#         raw_packet_bytes = (h[1] << 8) | h[0] 
+#         if raw_packet_bytes == 0:
+#             return None 
+#             
+#         if raw_packet_bytes == 0xFFFF: 
+#             raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
+# 
+#         payload_bytes = (raw_packet_bytes & 0x7FFF) - 4
+# 
+#         if payload_bytes > len(self._data_buffer):
+#             self._data_buffer = bytearray(payload_bytes)
+# 
+#         if payload_bytes <= self._max_header_plus_cargo:
+#             mv = memoryview(self._data_buffer)[:payload_bytes]
+#             self._read_into(mv, start=0, end=payload_bytes)
+# 
+#             # Dheck for packet termination
+#             if uart.readinto(byte_buf, 1) == 0:
+#                 raise RuntimeError("_read_packet payload: Timeout while waiting for packet end")
+# 
+#             if byte_buf[0] != 0x7E:
+#                 return None
+# 
+#         else:
+#             print(f"FRAGMENTED PACKET - {raw_packet_bytes=} and {self._max_header_plus_cargo=}")
+#             print(f"***** NEED to implement multi-packet reads, erasing header")
+#             print(f"* Have yet to see raw_packet_bytes > 193 bytes, algorithm sketched out")
+#             print(f"* Ceva and others have no clear documentation of the max cargo bytes value")
+#             print(f"{self._data_buffer}")
+#             raise NotImplementedError("The multi-packet reads are NOT unimplemented. TODO")
+# 
+#             # at startup some first packets have continuation, likely missed the packet before
+#             # when the payload bytes are longer than the xxxxx then we must processess the next packet
+#             # this should have continuation bit set
+#             continuation = bool(raw_packet_bytes & 0x8000)
+#             if continuation:
+#                 self._dbg(f"CONTINUATION in _read_packet: {raw_packet_bytes=}")
+#                 # raise PacketError("read partial packet")
+# 
+#         channel = h[2]
+#         seq = h[3]
+#         self._rx_sequence_number[channel] = seq  # report sequence number
+# 
+#         # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False, if self._debug also helps
+#         # if self._debug:
+#         #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
+# 
+#         return  mv, channel, payload_bytes
+
     def _read_packet(self, wait=None):
         if not self._new_data_interrupt and self._uart.any() < 1:
-            return None
+            if not wait:
+                return None
         
         # Local references to avoid repeated attribute lookups
         uart = self._uart
@@ -231,52 +315,62 @@ class BNO08X_UART(BNO08X):
 
         # Read header bytes with self._read_into
         self._read_into(self._header_mv, start=0, end=4)
+        # end ART Header read
 
-        raw_packet_bytes = h[0] | (h[1] << 8)
+        raw_packet_bytes = (h[1] << 8) | h[0]
         if raw_packet_bytes == 0:
-            return None 
-            
-        if raw_packet_bytes == 0xFFFF: 
-            raise OSError(f"FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
+            cs.value(1)
+            return None  # Must check for None (non-tuple) first, then can unpack data tuple
+        if raw_packet_bytes == 0xFFFF:
+            cs.value(1)
+            raise OSError("FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
-        payload_bytes = (raw_packet_bytes & 0x7FFF) - 4
+        packet_bytes = raw_packet_bytes & 0x7FFF
+        is_continuation = bool(raw_packet_bytes & 0x8000) # not True for first packet
 
-        if payload_bytes > len(self._data_buffer):
-            self._data_buffer = bytearray(payload_bytes)
+        # payload fragment to read, advertisement sets _max_header_plus_cargo=256, initial was 284 for big advertisement
+        fragment_bytes = min(packet_bytes, self._max_header_plus_cargo) - 4
 
-        if payload_bytes <= self._max_header_plus_cargo:
-            mv = memoryview(self._data_buffer)[:payload_bytes]
-            self._read_into(mv, start=0, end=payload_bytes)
+        # UART Payload Read
+        fragment_mv = memoryview(self._data_buffer)[:fragment_bytes]
+        self._read_into(fragment_mv, start=0, end=fragment_bytes)
 
-            # Dheck for packet termination
-            if uart.readinto(byte_buf, 1) == 0:
-                raise RuntimeError("_read_packet payload: Timeout while waiting for packet end")
+        # Check for packet termination
+        if uart.readinto(byte_buf, 1) == 0:
+            raise RuntimeError("_read_packet payload: Timeout while waiting for packet end")
 
-            if byte_buf[0] != 0x7E:
-                return None
-
-        else:
-            print(f"FRAGMENTED PACKET - {raw_packet_bytes=} and {self._max_header_plus_cargo=}")
-            print(f"***** NEED to implement multi-packet reads, erasing header")
-            print(f"* Have yet to see raw_packet_bytes > 193 bytes, algorithm sketched out")
-            print(f"* Ceva and others have no clear documentation of the max cargo bytes value")
-            print(f"{self._data_buffer}")
-            raise NotImplementedError("The multi-packet reads are NOT unimplemented. TODO")
-
-            # at startup some first packets have continuation, likely missed the packet before
-            # when the payload bytes are longer than the xxxxx then we must processess the next packet
-            # this should have continuation bit set
-            continuation = bool(raw_packet_bytes & 0x8000)
-            if continuation:
-                self._dbg(f"CONTINUATION in _read_packet: {raw_packet_bytes=}")
-                # raise PacketError("read partial packet")
+        if byte_buf[0] != 0x7E:
+            return None
+        # End UART Payload Read
 
         channel = h[2]
         seq = h[3]
-        self._rx_sequence_number[channel] = seq  # report sequence number
+        self._rx_sequence_number[channel] = seq
 
-        # * comment out self._dbg for normal operation, adds 105ms delay even with debug=False, if self._debug also helps
+        # Single Packet fast path
+        if not is_continuation and packet_bytes <= self._max_header_plus_cargo:
+            # * comment out self._dbg for normal operation, self._dbg very slow if uncommented even when if debug=False
+            # if self._debug:
+            #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, fragment_mv)}")
+            return fragment_mv, channel, fragment_bytes
+
+        # Multipart assembly
+        if not is_continuation:
+            self._assembly_buffer = bytearray()
+            self._target_len = packet_bytes
+
+        self._assembly_buffer.extend(fragment_mv)
+
+        # check and read more fragments
+        if len(self._assembly_buffer) + 4 < self._target_len:
+            if self._wait_for_int(timeout_us=10000):
+                return self._read_packet(wait=True)
+
+        payload_bytes = len(self._assembly_buffer)
+        mv = memoryview(self._assembly_buffer)[:payload_bytes]
+
+        # * comment out self._dbg for normal operation, self._dbg very slow if uncommented even when if debug=False
         # if self._debug:
         #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
 
-        return  mv, channel, payload_bytes
+        return mv, channel, payload_bytes

@@ -79,7 +79,7 @@ FUTURE: include estimated ange in full quaternion implementation, maybe make new
 FUTURE: process two ARVR reports (rotation vector has estimated angle which has a different Q-point)
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __repo__ = "https://github.com/bradcar/bno08x_i2c_spi_MicroPython"
 
 from math import asin, atan2, degrees
@@ -610,7 +610,7 @@ class SensorFeature4:
 
     @property
     def full(self):
-        """Returns (v1, v2, v3, real, accuracy, timestamp_ms)."""
+        """Returns (qi, qj, qk, qr, accuracy, timestamp_ms)."""
         val = self._values[self.feature_id]
         if val is None: self._raise_not_enabled()
         self._count[self.feature_id] = 0
@@ -618,7 +618,7 @@ class SensorFeature4:
 
     @property
     def euler(self):
-        """Returns converted Euler 3-tuple plus  accuracy and timestamp_ms."""
+        """Returns converted Euler 3-tuple (Y-P-R) plus accuracy and timestamp_ms."""
         val = self._values[self.feature_id]
         if val is None: self._raise_not_enabled()
         self._count[self.feature_id] = 0
@@ -626,7 +626,12 @@ class SensorFeature4:
 
     @property
     def euler_full(self):
-        """Returns converted Euler 3-tuple plus  accuracy and timestamp_ms."""
+        """
+        Returns converted Euler 3-tuple plus  accuracy and timestamp_ms.
+        At Quaternion report unpacking the quaternion order can be changed.
+        qr = data[0], qi = data[1], qj = data[2],  qk =data[3]
+        reminder: BNO SH2 sensor internally orders i,j,k,r but report_update reorders them during unpack
+        """
         data = self._values[self.feature_id]
         if data is None: self._raise_not_enabled()
         self._count[self.feature_id] = 0
@@ -805,7 +810,8 @@ class BNO08X:
         if self._reset_mismatch:
             raise RuntimeError(f"{reset_type} reset cause mismatch; check reset_pin wiring")
 
-        raise RuntimeError(f"{reset_type} reset not acknowledged, check BNO08x wiring, if SPI/BNO used before UART/BNO then power cycle BNO")
+        raise RuntimeError(
+            f"{reset_type} reset not acknowledged, check BNO08x wiring, if SPI/BNO used before UART/BNO then power cycle BNO")
 
     def _packet_decode(self, packet_length, channel, seq, payload):
         """Packet decode for debugging driver for both read & send packets"""
@@ -893,15 +899,16 @@ class BNO08X:
                 while report_index < data_length:
                     report_id = p[report_index]
                     required_bytes = report_length_map(report_id, 0)
-                    
+
                     if required_bytes == 0: break
-                    
-                    if 0x01 <= report_id <= 0x09:                
+
+                    if 0x01 <= report_id <= 0x09:
                         scalar, count = scaling_map(report_id, (0, 0))
                         idx = report_index
                         b2 = p[idx + 2]
                         # accuracy = b2 & 0x03
                         ts = packet_base_ms + (((b2 & 0xFC) << 6) | p[idx + 3]) * FP_DIV_TEN
+                        # r is temp variable used to prepare for Q-point scaling
                         r = p[idx + 4] | (p[idx + 5] << 8)
                         v1 = (r - ((r & SIGN_BIT) << 1)) * scalar
                         r = p[idx + 6] | (p[idx + 7] << 8)
@@ -913,13 +920,16 @@ class BNO08X:
                             report_values[report_id] = (v1, v2, v3, b2 & 0x03, ts)
                         else:  # Handle Quaternion V4
                             r = p[idx + 10] | (p[idx + 11] << 8)
+                            # Q-point scales the 4 result returned
                             v4 = (r - ((r & SIGN_BIT) << 1)) * scalar
-                            report_values[report_id] = (v1, v2, v3, v4, b2 & 0x03, ts)
+                            # SH-2 BNO INTERNAL DATA STRUCTURE DIFFERENT ORDER !  (qi, qj, qk, qr)
+                            # BUT we unpack and store in proper user (qr, qi, qj, qk) ordering
+                            report_values[report_id] = (v4, v1, v2, v3, b2 & 0x03, ts)
 
                         unread_report_count[report_id] += 1
                         report_index += required_bytes
                     else:
-                        self._process_report(report_id, p_mv[report_index : report_index + required_bytes])
+                        self._process_report(report_id, p_mv[report_index: report_index + required_bytes])
                         report_index += required_bytes
                 continue
 
@@ -1041,33 +1051,31 @@ class BNO08X:
         return ticks_diff(ticks, self._epoch_start_ms)
 
     @staticmethod
-    def euler_conversion(i, j, k, r):
+    def euler_conversion(r, i, j, k):
         """
-        Converts quaternion to Euler angles(degrees).
-        Robotics/Android ENU, ENU (East-North-Up).
-        X-Y-Z sequence (often referred to as Roll-Pitch-Yaw
+        Converts quaternion to Euler angles (degrees).
+        Android ENU Frame, ENU (East-North-Up).
+        Z-Y-X sequence (often referred to as Yaw-Pitch-Roll
         """
-        two_r = 2.0 * r
-        two_i = 2.0 * i
-        two_j = 2.0 * j
+        # yaw (physical Z, CCW is +, comes from quaternion k)
+        yaw = degrees(atan2(
+            2.0 * (r * k + i * j),
+            1.0 - 2.0 * (j * j + k * k)
+        ))
 
-        t0 = two_r * i + two_j * k
-        t1 = 1.0 - 2.0 * (i * i + j * j)
-        roll = degrees(atan2(t0, t1))
+        # roll (physical roll X, comes from quaternion j)
+        # negated to match silkscreen on Sparkfun PCB
+        roll = -degrees(atan2(
+            2.0 * (r * j + i * k),
+            1.0 - 2.0 * (j * j + i * i)
+        ))
 
-        t2 = two_r * j - k * two_i
-        # Clamp to avoid NaN from float precision errors
-        if t2 > 1.0:
-            t2 = 1.0
-        elif t2 < -1.0:
-            t2 = -1.0
+        # pitch (physical pitch Y, comes from quaternion i)
+        t2 = 2.0 * (r * i - j * k)
+        t2 = max(-1.0, min(1.0, t2))
         pitch = degrees(asin(t2))
 
-        t3 = two_r * k + two_i * j
-        t4 = 1.0 - 2.0 * (j * j + k * k)
-        yaw = degrees(atan2(t3, t4))
-
-        return roll, pitch, yaw
+        return yaw, pitch, roll
 
     @staticmethod
     def degree_conversion(x, y, z):
@@ -1079,7 +1087,7 @@ class BNO08X:
     def tare(self, axis=0x07, basis=None) -> int:
         """
         Tare the sensor
-           axis 0x07 (Z,Y,X). Re-orient all motion outputs (accel, gyro, mag, &rotation vectors)
+           axis 0x07 (Z,Y,X). Re-orient all motion outputs (accel, gyro, mag, & rotation vectors)
            axis 0x04 (Z-only). changes the heading, but not the tilt
 
         Rotation Vector or Geomagnetic Rotation Vector will reorient all motion outputs.
@@ -1109,18 +1117,23 @@ class BNO08X:
                               )
         return
 
-    def tare_reorientation(self, i, j, k, r):
+    def tare_reorientation(self, qr, qi, qj, qk):
         """
         Tare with any of the 3 quaternions. Set orientation of sensor (es: sensor pcb is vertical)
         you can use this to set left edge down, and the other directions.
+        this is called with user ordering (r,i,j,k), but must pack it in BNO ordering (i,j,k,r)
         """
         # Convert floats to int16 using Q14 fixed-point
-        qi = int(i * (1 << 14))
-        qj = int(j * (1 << 14))
-        qk = int(k * (1 << 14))
-        qr = int(r * (1 << 14))
-        payload = pack("<hhhh", qi, qj, qk, qr)
-        self._dbg(f"TARE: q_int = {(qi, qj, qk, qr)}")
+        r = int(qr * (1 << 14))
+        i = int(qi * (1 << 14))
+        j = int(qj * (1 << 14))
+        k = int(qk * (1 << 14))
+
+        # this called with proper user (qr, qi, qj, qk) ordering
+        # BUT: SH-2 BNO REQUIRES DIFFERENT ORDER !  (qi, qj, qk, qr)
+        payload = pack("<hhhh", i, j, k, r)
+        self._dbg(f"TARE: q_int = {(qr, qi, qj, qk)}")
+
         params = [_ME_TARE_SET_REORIENTATION] + list(payload)
         self._send_me_command(_ME_TARE_COMMAND, params)
         return
@@ -1184,10 +1197,10 @@ class BNO08X:
         start_time = ticks_ms()
         send_packet = bytearray(12)
         self._insert_command_request_report(_SAVE_DCD_COMMAND, send_packet, seq)
-        
+
         self._wake_signal()
-        self._send_packet(SHTP_CHAN_CONTROL, send_packet)        
-        
+        self._send_packet(SHTP_CHAN_CONTROL, send_packet)
+
         while ticks_diff(ticks_ms(), start_time) < _ME_DCD_TIMEOUT_MS:
             self.update_sensors()
             if self._dcd_saved_at > start_time:
@@ -1240,11 +1253,14 @@ class BNO08X:
 
             if count == 3:
                 sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar)
+
+            # SH-2 BNO INTERNAL DATA STRUCTURE DIFFERENT ORDER !  (qi, qj, qk, qr)
+            # BUT we unpack and store in proper user (qr, qi, qj, qk) ordering
             elif count == 4:
-                sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar, r.v4 * scalar)
-            # future: handle 5-tuple, warning e1scalar for e1 will be different
+                sensor_data = (r.v4 * scalar, r.v1 * scalar, r.v2 * scalar, r.v3 * scalar)
+            # future: handle 5-tuple, WARNING 'e1scalar' for e1 will be different
             # elif count == 5:
-            #    sensor_data = (r.v1 * scalar, r.v2 * scalar, r.v3 * scalar, r.v4 * scalar, r.e1 * e1scalar)
+            #    sensor_data = (r.v4 * scalar, r.v1 * scalar, r.v2 * scalar, r.v3 * scalar, r.e1 * e1scalar)
             else:
                 raise ValueError("Invalid sensor data count, 5-tuple not implemented")
 
@@ -1360,7 +1376,7 @@ class BNO08X:
             response = unpack_from("<BBBBBBBBBBB", report_bytes, 5)
             (_report_id, _seq_number, command, _command_seq_number, _response_seq_number,) = report_body
             cal_status, accel_en, gyro_en, mag_en, planar_en, table_en, *_reserved = response
-            
+
             if command == 4:
                 self._dbg("Received: Command to Re-Initialze BNO08x\n")
             elif command == _ME_CALIBRATE_COMMAND and cal_status == 0:
@@ -1369,14 +1385,14 @@ class BNO08X:
                 self._dbg(f"Ready to start calibration at {ticks_ms()=}")
             elif command == _SAVE_DCD_COMMAND:
                 self._dbg(f"DCD Save calibration sucess. Status is {cal_status}")
-                
+
                 if cal_status == _COMMAND_STATUS_SUCCESS:
                     self._dcd_saved_at = ticks_ms()
                 else:
                     raise RuntimeError(f"Unable to save calibration data, status={cal_status}")
 
             return
-        
+
         # Product ID Response (0xf8)
         if report_id == _REPORT_PRODUCT_ID_RESPONSE:
             reset_cause = report_bytes[1]
@@ -1458,7 +1474,6 @@ class BNO08X:
         if report_id == _COMMAND_EXE_REPORT:
             self._dbg("Command Execution Received on Channel (0x0)")
             return
-
 
     # Enable given feature/sensor report on BNO08x (See SH2 6.5.4)
     def enable_feature(self, feature_id, freq=None):

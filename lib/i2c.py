@@ -87,6 +87,8 @@ class BNO08X_I2C(BNO08X):
 
         self._header = bytearray(4)  # efficient spi handling of header read
         self._header_mv = memoryview(self._header)
+        self._assembly_buffer = bytearray()
+        self._target_len = 0
 
         # I2C can not use cs_pin or wake_pin
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=None, wake_pin=None, debug=debug)

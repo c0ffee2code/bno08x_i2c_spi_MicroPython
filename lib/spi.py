@@ -24,9 +24,10 @@ Using multiple sensors on SPI - untested with this driver
 """
 from struct import pack
 
-from bno08x import BNO08X
 from machine import Pin
 from utime import ticks_us, ticks_diff, sleep_us
+
+from bno08x import BNO08X
 
 
 def _is_spi(obj) -> bool:
@@ -86,6 +87,8 @@ class BNO08X_SPI(BNO08X):
 
         self._header = bytearray(4)  # SHTP headers are 4 bytes only
         self._header_mv = memoryview(self._header)
+        self._assembly_buffer = bytearray()
+        self._target_len = 0
 
         super().__init__(_interface, reset_pin=reset_pin, int_pin=int_pin, cs_pin=cs_pin, wake_pin=wake_pin,
                          debug=debug)
@@ -143,7 +146,7 @@ class BNO08X_SPI(BNO08X):
             raise OSError("FATAL BNO08X Error: Invalid SHTP header(0xFFFF), BNO08x sensor corrupted?")
 
         packet_bytes = raw_packet_bytes & 0x7FFF
-        is_continuation = bool(raw_packet_bytes & 0x8000) # not True for first packet
+        is_continuation = bool(raw_packet_bytes & 0x8000)  # not True for first packet
 
         # payload fragment to read, advertisement sets _max_header_plus_cargo=256, initial was 284 for big advertisement
         fragment_bytes = min(packet_bytes, self._max_header_plus_cargo) - 4
@@ -161,7 +164,7 @@ class BNO08X_SPI(BNO08X):
         if not is_continuation and packet_bytes <= self._max_header_plus_cargo:
             # * comment out self._dbg for normal operation, self._dbg very slow if uncommented even if debug=False
             # if self._debug:
-            #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, mv)}")
+            #     self._dbg(f" Received Packet *************{self._packet_decode(payload_bytes + 4, channel, seq, Fragment_mv)}")
             return fragment_mv, channel, fragment_bytes
 
         # Multipart assembly

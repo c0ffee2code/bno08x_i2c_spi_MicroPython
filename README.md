@@ -1,13 +1,12 @@
 # bno08x-i2c-spi-micropython
 ## Micropython I2C SPI Library BNO08x Sensors for 9-axis Fusion
 
-BNO08x MicroPython library for BNO086, BNO085, BNO080 IMUs on I2C, SPI, UART. The BNO08x devices have a variety of sensors that can provide data/results.
-Each sensor is accessed individually and results are called reports.
+BNO08x MicroPython library for BNO086, BNO085, BNO080 IMUs (Inertial Memory Units) on I2C, SPI, UART. The 9-degree of freedom (9-DOF) BNO08x devices can provide indiviual sensor results in the reports that are enabled.
 
-This library is written to efficiently provide high-frequency updates (short period). In addition, each resport has timestamps with 0.1 msec resolution. 
+This library is written to efficiently provide high-frequency updates (short period). In addition, each resport has result timestamps with 0.1 msec resolution. 
 Knowing IMU results together with timestamp of results is critical for many telemetry applications.  
 
-This librarty requires that the int_pin and reset_pin be connected to the sensor.
+This library requires that the int_pin and reset_pin be connected to the sensor.
 
 This library has been tested with BNO086 sensor on Raspberry Pico 2 W microcontroller.
 The report frequency can be limited by the interface chosen. SPI & UART are more efficient than I2C. 
@@ -17,6 +16,14 @@ BNO08x also uses I2C clock stretching which can cause issues on many microcontro
 - 100% inspired by the original Adafruit CircuitPython I2C library for BNO08x. Copyright (c) 2020 Bryan Siepert for Adafruit Industries. ([GitHub link](https://github.com/adafruit/Adafruit_CircuitPython_BNO08x))
 - This code was also inspired by feature and fixes written by dobodu ([GitHub link](https://github.com/dobodu/BOSCH-BNO085-I2C-micropython-library))
 - ...thanks in advance for any pull request contributions.
+
+## Note: API change for Quaternion, and Euler in version 1.1 
+
+[!NOTE]
+In version 1.1, we changed the API for Quaternion & Euler parameters to match most other libraries including SparkFun & Adafruit.
+However, please note that Adafruit and this implemebtion have the same pitch orientation, but Sparkfun's pitch is the negative value.
+Also note that this "roll" in this library matches the silk screen on the Sparkfun sensor board, but Sparkfun and Adafruit are negatives of that.
+Details are in the section at the end of this README.md
 
 ## Setting up the BNO08x Sensor
 
@@ -48,7 +55,7 @@ To use I2C, both PS0 and PS1 can not have solder blobs which means both are tied
 
 ## Enable the Sensor Reports
 
-Before getting sensor report, each specific report must be enabled.
+Before getting a sensor report, each specific report must be enabled.
 
     bno.acceleration.enable()
     
@@ -69,28 +76,26 @@ Primary sensor report constants:
 ## Getting the Sensor Results:
 
 Sensors values can be read after you perform a bno.update_sensors. 
-AVOID sleep() in your loops, because senssors must be read quickly after updates. See example codes for better strategies.
+AVOID using sleep() in your loops, because senssors must be read quickly after updates. See example codes for better strategies.
 
     bno.update_sensors()
     accel_x, accel_y, accel_z = bno.acceleration
 
-Roll, tilt, and yaw are obtained using quaternion with the modifier euler:
+Yaw, pitch, and roll are obtained using quaternion with the modifier euler:
 
     bno.update_sensors()
-    roll, tilt, yaw = bno.quaternion.euler
+    yaw, pitch, roll = bno.quaternion.euler
 
-You can use one update_sensors to get the current update from all sensors and then the various sensors.
-
-Beyond the sensor data, each update also has metadata with the timestamp of the reading and its accuracty. 
+Beyond the sensor values, each update also has metadata with the timestamp of the reading and its accuracty. 
 The sensor data and metadata for each report can be accessed at the same time using the modifier ".full".
-In this way, the accuracy and the microsecond-accurate timestamp of a particular report is returned at the same time.
+In this way, the accuracy and the sub-microsecond-accurate timestamp of a particular report is returned at the same time.
 The timestamp_ms is milliseconds since sensor startup. 
 You can calculate the millisecond difference between ticks_ms() and the BNO08x start time by using bno.bno_start_diff.
 Understanding timestamps is recommended for high-frequency applications (>5Hz).
 
     bno.update_sensors()
     accel_x, accel_y, accel_z, accuracy, timestamp_ms = bno.acceleration.full
-    roll, tilt, yaw, accuracy, timestamp_ms = bno.quaternion.euler_full   # note underscore in .euler_full
+    yaw, pitch, roll, accuracy, timestamp_ms = bno.quaternion.euler_full   # note underscore in .euler_full
     ms_since_sensor_start = bno.bno_start_diff(ticks_ms())
     print(f"milliseconds from bno start: {ms_since_sensor_start} msec")
 
@@ -99,27 +104,27 @@ Using .full is recommended.
 
     accuracy, timestamp_ms = bno.acceleration.meta
 
-If you are using quaternions for various processing and at a later time you want to convert to an euler angle (degrees),
-you can use the following conversion function which uses the common aerospace/robotics convention (XYZ rotation order: roll-pitch-yaw).
+If you are using quaternions and want to convert to an euler angle (degrees), the following conversion function cna be used.
+Euler angles use the common Android robotics convention (Z-Y-X rotation order: yaw-pitch-roll).
 
-    i, j, k, r = bno.quaternion
+    r, i, j, k = bno.quaternion
     # ...various quaternion processing
-    roll, pitch, yaw = euler_conversion(new_i, new_j, new_k, new_r)
+    yaw, pitch, roll = euler_conversion(new_r, new_i, new_j, new_k)
 
 **Examples of other sensor reports**
 
 The examples directory shows the use of the following sensor reports. Each of these functions use on-chip sensor fusion for accuracy.
 
-    x, y, z = bno.acceleration          # acceleration 3-tuple of x,y,z float returned (gravity direction included)
-    x, y, z = bno.linear_acceleration   # linear accel 3-tuple of x,y,z float returned
-    x, y, z = bno.gyro                  # gryoscope 3-tuple of x,y,z float returned
-    x, y, z = bno.magnetic              # magnetic 3-tuple of x,y,z float returned
-    x, y, z = bno.gravity               # gravity vector 3-tuple of x,y,z float returned
-    roll, pitch, yaw = bno.quaternion.euler     # rotation degree angle in Euler orientation 3-tuple of x,y,z float returned
+    x, y, z = bno.acceleration          # acceleration 3-tuple of float returned (gravity direction included)
+    x, y, z = bno.linear_acceleration   # linear accel 3-tuple of float returned
+    x, y, z = bno.gyro                  # gryoscope 3-tuple of float returned
+    x, y, z = bno.magnetic              # magnetic 3-tuple of float returned
+    x, y, z = bno.gravity               # gravity vector 3-tuple of float returned
+    yaw, pitch, roll = bno.quaternion.euler     # rotation degree angle in Euler orientation 3-tuple of float returned
 
-    i, j, k, real = bno.quaternion              # rotation 4-tuple of i,j,k,real float returned
-    i, j, k, real = bno.geomagnetic_quaternion  # rotation 4-tuple of i,j,k,real float returned
-    i, j, k, real = bno.game_quaternion         # rotation 4-tuple of i,j,k,real float returned
+    qr, qi, qj, qk = bno.quaternion              # rotation 4-tuple of float returned
+    qr, qi, qj, qk = bno.geomagnetic_quaternion  # rotation 4-tuple of float returned
+    qr, qi, qj, qk = bno.game_quaternion         # rotation 4-tuple of float returned
 
     num = bno.steps                             # number of steps since sensor initialization returned
     stability_str = bno.stability_classifier    # string of stability classification returned
@@ -146,9 +151,9 @@ One can manually calibrate the sensor (details  in references):
 
 tare_reorientation can be used to set the sensor board orientation, for example if are mounting board vertically, or if you want a different part of the sensor to be "forward".
 
-    i, j, k, real = bno.quaternion   # rotation 4-tuple of i,j,k,real float returned
+    qr, qi, qj, qk = bno.quaternion   # rotation 4-tuple of float returned
     # perform calcuations to transform tuple for your direction to tare on, then set, and save (see references below)
-    bno.tare_reorientation(i, j, k, real)
+    bno.tare_reorientation(qr, qi, qj, qk)
     bno.save_tare_data()
 
 We also supply the following conversion helper function:
@@ -180,25 +185,35 @@ Only the most recent report for each sensor is stored and returned.
 
 ## Euler Angles, Gimbal Lock, and Quaternions
 
-Euler angle conventions: This library uses Robotics/Android ENU convention (East, North, Up).
-It uses the X-Y-Z sequence (often called Roll-Pitch-Yaw)
-- Axes: X points East, Y points North, and Z points Up toward the sky. 
-- Gravity: A stationary sensor "feels" +1g on the Z-axis.
-- It aligns with the standard Cartesian (x,y) graph we learned in school (X is right, Y is forward).
+Euler angle conventions: 
 
-The other conveion used in some implementations is the Aerospace NED (North East Down).
-- Axes: X points North, Y points East, and Z points Down into the Earth. 
-- Gravity: A stationary sensor on a table "feels" −1g on the Z-axis. 
-- For pilots, it’s more intuitive for navigation. Because "Yaw" corresponds to a compass heading (0 is North, 90 is East).
+This library uses the Robotics / Android ENU convention (East, North, Up). A stationary sensor “feels” gravity +1g along the Z-axis.
+Rotation sequence: Z-Y-X (commonly called Yaw-Pitch-Roll). 
+Axes orientation, all are right-handed:
+- Z points Up, toward the sky.
+- Y points North.
+- X points East, roll is meased around x-axis
 
-All Euler angles suffer from a well-known issue called Gimbal Lock. Using Quaternions in code avoids this.
+Positive roll is seen on a CCW roll which is alighed with the silkscreen on the Sensor board.
+Pitch and yaw signs match the ENU convention. Yaw increaes with CCW from above.  Yaw alighed with the silkscreen on the Sensor board.
+Cartesian alignment: X points right, Y points forward, consistent with standard school Cartesian graphs.
+
+The other common convention is Aerospace / NED (North, East, Down). A stationary sensor “feels” gravity -1g along the Z-axis.
+Axes orientation:
+- X points North.
+- Y points East.
+- Z points Down, into the Earth.
+Roll, pitch, and yaw are defined relative to aircraft axes.
+Yaw corresponds directly to compass heading: 0° = North, 90° = East. Yaw increaes with CW from above.
+Preferred for aviation and navigation applications.
+
+Euler angles suffer from a well-known issue called Gimbal Lock. Using Quaternions in code avoids this.
 Gimbal lock occurs when two rotation axes align, which removes one degree of freedom. When a degree of freedom is
 lost, some orientations will have multiple valid representations.
 A well-known example occurred during the Apollo 11 mission.
 
-Quaternions avoid this by providing a unique representation for every possible orientation.
-Quaternions represents rotation with multiple "single axis and rotation angles".
-Most computer games use this implementation for smooth and predictable graphics.
+Quaternions avoid this by providing a unique representation for every possible orientation. We use the standard ordering (qr, qi, qj, qk).
+Most computer games are implemented with quaternions for smooth and predictable graphics.
 
 - https://base.movella.com/s/article/Understanding-Gimbal-Lock-and-how-to-prevent-it?language=en_US
 - https://en.wikipedia.org/wiki/Gimbal_lock
@@ -338,7 +353,7 @@ the basic Sensor Calibration Procedure:
 - Gyroscope
 - - Set sensor down on a stationary surface for approximately 2-3 seconds.
 - Magnetometer
-- - Sensor should be rotated about 180° and back to the beginning position in each axis (roll, pitch, yaw). In roughly 2 seconds.
+- - Sensor should be rotated about 180° and back to the beginning position in each axis (yaw, pitch, roll). In roughly 2 seconds.
 
 Background:
 In the BNO08x datasheet see Figure 3-2 summarizes the steps required to calibrate the accelerometer, gyroscope and magnetometer.
@@ -376,6 +391,40 @@ implemented. See code source for details.
 
 The BNO08x has a simplified UART-RVC interface for use on unmanned ground roving robot and robot vacuum cleaners (RVC).
 This is a very different protocol and not supported in my driver. Take a look at: https://github.com/rdagger/micropython-bno08x-rvc
+
+## Changes required if porting from Adafuit or SparkFun
+Match Adafruit
+- pitch = -pitch
+- roll  = -roll
+- yaw unchanged
+
+Match SparkFun
+- roll = -roll  
+- yaw and pitch unchanged
+
+
+## Warning: API change for Quaternion, and Euler in version 1.1 
+
+In version 1.1, we changed the API for Quaternion & Euler parameters to match most other libraries including SparkFun & Adafruit.
+However, please note that Adafruit and this implemebtion have the same pitch orientation, but Sparkfun's pitch is the negative value.
+Also note that this "roll" in this library matches the silk screen on the Sparkfun sensor board, but Sparkfun and Adafruit are negatives of that.
+Details are in the section at the end of this README.md
+
+In version 1.0 of the library, the Quaternion functions were aligned with Ceva's internal SH2 definitions, which do not match most other libraries and codes parameter orderings.
+
+Quaternion:
+
+    v1.0 Ceva ordering: i, j, k, real = bno.quaternion
+    v 1.1 Standard ordering: real, i, j, k, = bno.quaternion
+
+In addition, in version 1.0 of the library, The Euler conversion math is Z-Y-X, but they are in a non-standard order.
+This should be fixed. The current and future math uses Right-hand about +Z, Right-hand about +Y, Right-hand about +X.
+
+Euler:
+
+    v1.0 Euler Angles: roll, pitch, yaw = bno.quaternion.euler # Frame: ENU
+    v1.1 Euler angles: yaw, pitch, roll = bno.quaternion.euler # Frame: ENU with Rotation calculation order: Z → Y → X
+
 
 ## References
 
