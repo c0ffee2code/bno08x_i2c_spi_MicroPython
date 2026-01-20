@@ -371,7 +371,7 @@ VPython updates at 100 Frames/sec and sensor outputs Quaternions at 100 Hz (10ms
 
 https://github.com/bradcar/vpython_imu_tracker
 
-![Output1](imgs/vpython-imu-tracker-1.png)
+<img alt="Output1" src="imgs/vpython-imu-tracker-1.png" width="350"/>
 
 ## Raw Reports - Be Careful!
     BNO_REPORT_RAW_ACCELEROMETER
