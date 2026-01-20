@@ -1,8 +1,11 @@
 # test_simple_uart.py
 #
-# BNO08x MicroPython UART Test
+# BNO08x MicroPython SPI Test
 #
-# UART interface: Test simple sensor report for acceleration
+# SPI interface: Test simple sensor report for acceleration
+#
+# Reports requested at 100 Hz, sensor chooses 125Hz (8 msec between reports)
+# It prints so much data that your console may not keep up.
 
 from bno08x import *
 from machine import UART, Pin
