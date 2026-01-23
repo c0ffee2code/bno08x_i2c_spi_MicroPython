@@ -1,17 +1,13 @@
-# test_reports_spi.py - Runs on Pico 2 W with BNO086 sensor outputs over USB-C
+# quaternion_stream_spi.py - Runs on Pico 2 W with BNO086 sensor outputs over USB-C
 #
-# BNO08x MicroPython SPI using Uses Brad's bno08x library (I2C, SPI, UART) to efficiently read IMU data.
 # https://github.com/bradcar/bno08x_i2c_spi_MicroPython
 #
-# SPI interface: quaternion output
-#
-# Enabling reports at 200 Hz (5 millisec)
-# Enabling reports at 100 Hz (10 millisec)
-# sensor provides frequencies at these requested rates
-
-from bno08x import *
+# quaternion output at 200 Hz (5 millisec) on SPI interface.
+# uses efficient sys.stdout.write
 
 import sys
+
+from bno08x import *
 from machine import SPI, Pin
 from spi import BNO08X_SPI
 from utime import ticks_ms
@@ -36,10 +32,12 @@ def main():
     # bno.print_report_period()
 
     while True:
-        bno.update_sensors()
+        if not bno.update_sensors():
+            continue
 
         if bno.quaternion.updated:
             qr, qi, qj, qk = bno.quaternion
+
             # print(f"{qr:.4f},{qi:.4f},{qj:.4f},{qk:.4f}")
             output = f"{qr:.4f},{qi:.4f},{qj:.4f},{qk:.4f}\n"
             sys.stdout.write(output)
