@@ -360,7 +360,7 @@ For more details on the procedure to calibrate the BNO08x, refer to the BNO08x S
 application note.
 - https://cdn.sparkfun.com/assets/9/e/1/d/9/Sensor-Calibration-Procedure-v1.1.pdf
 
-## Sample use of library - output results to Vpython to show sensor orientation
+## Sample use of library - output results to VPython to show sensor orientation
 
 I created a VPython code that runs on a Mac that reads data created on a Raspberry Pi Pico 2 W and a BNO086 sensor.
 That code can be found here for Mac and RP Pico 2W that uses this library. 
@@ -377,7 +377,7 @@ https://github.com/bradcar/vpython_imu_tracker
 
 The raw reports, which do not use sensor fusion calculations, can be accessed for acceleration,
 magnetic, and gyro sensors. It is not generally recommended to use these reports, because they require signficant coding (careful
-calibaration, Kalman filters, etc.). Starting background on Fusion algorithms: https://www.youtube.com/watch?v=0rlvvYgmTvI
+calibration, Kalman filters, etc.). Starting background on Fusion algorithms: https://www.youtube.com/watch?v=0rlvvYgmTvI
 
 Please read the references below before attempting to use raw reports. The raw sensors timestamps are not well-documented in Ceva documentation.
 
